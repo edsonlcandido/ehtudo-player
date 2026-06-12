@@ -45,6 +45,19 @@
             </intent-filter>
         </activity>
 
+        <!-- WorkManager's foreground service. `DownloadWorker` calls
+             `setForegroundAsync` with `FOREGROUND_SERVICE_TYPE_DATA_SYNC` on
+             API 34+ (see DownloadWorker.kt:170), and the OS rejects the
+             foreground promotion unless the manifest declares the matching
+             `foregroundServiceType`. We merge the attribute into the
+             service entry that the work-runtime AAR already provides,
+             instead of replacing it (which would lose the library's
+             intent-filter / flags). -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+
     </application>
 
 </manifest>
