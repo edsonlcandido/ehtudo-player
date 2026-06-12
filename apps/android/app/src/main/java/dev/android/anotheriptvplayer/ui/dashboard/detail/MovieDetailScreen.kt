@@ -44,9 +44,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.android.anotheriptvplayer.R
 import dev.android.anotheriptvplayer.model.Playlist
 import dev.android.anotheriptvplayer.data.FavoriteRepository
 import dev.android.anotheriptvplayer.networking.XtreamApiClient
@@ -140,7 +142,7 @@ fun MovieDetailScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
@@ -156,7 +158,7 @@ fun MovieDetailScreen(
                     }) {
                         Icon(
                             imageVector = if (isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
-                            contentDescription = if (isFavorite) androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.detail_favorite_remove) else androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.detail_favorite_add),
+                            contentDescription = if (isFavorite) stringResource(R.string.detail_favorite_remove) else stringResource(R.string.detail_favorite_add),
                             tint = if (isFavorite) Color(0xFFFFC107) else MaterialTheme.colorScheme.onSurface,
                         )
                     }
@@ -173,9 +175,9 @@ fun MovieDetailScreen(
     ) { _ ->
         when {
             movie == null && fetchError != null -> ErrorState(
-                message = fetchError ?: "Bilinmeyen hata",
+                message = fetchError ?: stringResource(R.string.settings_unknown_error),
             )
-            movie == null -> LoadingState(message = androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.detail_loading_movie))
+            movie == null -> LoadingState(message = stringResource(R.string.detail_loading_movie))
             else -> {
                 val pl = playlist
                 MovieDetailContent(
@@ -193,7 +195,7 @@ fun MovieDetailScreen(
                         }.onFailure {
                             Toast.makeText(
                                 context,
-                                context.getString(dev.android.anotheriptvplayer.R.string.detail_trailer_failed),
+                                context.getString(R.string.detail_trailer_failed),
                                 Toast.LENGTH_SHORT,
                             ).show()
                         }
@@ -238,10 +240,10 @@ private fun MovieDetailContent(
         }
 
         DetailActionBar(
-            primaryTitle = androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.detail_watch),
+            primaryTitle = stringResource(R.string.detail_watch),
             onPrimary = { onWatch() },
             primaryIcon = Icons.Default.PlayArrow,
-            trailerTitle = movie.youtubeTrailer.normaliseTrailerUrl()?.let { "Fragman" },
+            trailerTitle = movie.youtubeTrailer.normaliseTrailerUrl()?.let { stringResource(R.string.detail_trailer) },
             onTrailer = movie.youtubeTrailer.normaliseTrailerUrl()?.let { url -> { onTrailer(url) } },
         )
 
@@ -252,19 +254,19 @@ private fun MovieDetailContent(
 
         val director = movie.director?.trim().orEmpty()
         if (director.isNotEmpty()) {
-            DetailInfoTextBlock(label = androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.detail_director), value = director)
+            DetailInfoTextBlock(label = stringResource(R.string.detail_director), value = director)
         }
 
         val cast = movie.cast?.trim().orEmpty()
         if (cast.isNotEmpty()) {
-            DetailInfoTextBlock(label = "Oyuncular", value = cast, maxLines = 3)
+            DetailInfoTextBlock(label = stringResource(R.string.detail_section_cast), value = cast, maxLines = 3)
         }
 
         // Show a hint when playlist hasn't loaded yet (very brief; usually
         // it lands before the user sees this).
         if (playlist == null) {
             Text(
-                text = androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.detail_loading_playlist),
+                text = stringResource(R.string.detail_loading_playlist),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp),

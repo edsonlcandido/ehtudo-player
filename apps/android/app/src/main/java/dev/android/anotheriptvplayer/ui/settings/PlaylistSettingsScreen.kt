@@ -165,7 +165,7 @@ fun PlaylistSettingsBody(
                                 color = MaterialTheme.colorScheme.error,
                             )
                         } else {
-                            Text("Kategoriler, filmler ve dizileri sunucudan yeniden indir.")
+                            Text(stringResource(R.string.settings_re_download_subtitle))
                         }
                     },
                     trailingContent = {
@@ -280,7 +280,7 @@ fun PlaylistSettingsBody(
             if (server?.timezone?.isNotBlank() == true || rawMessage.isNotEmpty()) {
                 SettingsCard(title = stringResource(R.string.settings_card_server)) {
                     server?.timezone?.takeIf { it.isNotBlank() }?.let {
-                        InfoRow(label = "Zaman dilimi", value = it)
+                        InfoRow(label = stringResource(R.string.settings_timezone), value = it)
                     }
                     if (rawMessage.isNotEmpty()) {
                         if (server?.timezone?.isNotBlank() == true) Divider()
@@ -291,7 +291,7 @@ fun PlaylistSettingsBody(
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             Text(
-                                text = "Mesaj",
+                                text = stringResource(R.string.settings_message),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             Text(

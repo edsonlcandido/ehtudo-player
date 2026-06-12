@@ -19,9 +19,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.android.anotheriptvplayer.R
 import dev.android.anotheriptvplayer.ui.LocalPlaylistContentStore
 import dev.android.anotheriptvplayer.ui.dashboard.ImageKind
 import dev.android.anotheriptvplayer.ui.dashboard.PosterCard
@@ -54,14 +56,14 @@ fun SeriesCategoryDetailScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = category?.name ?: "Kategori",
+                        text = category?.name ?: stringResource(R.string.category_label_fallback),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
             )
@@ -71,13 +73,13 @@ fun SeriesCategoryDetailScreen(
             CategorySearchField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = "Dizi ara",
+                placeholder = stringResource(R.string.category_search_series),
             )
             CategoryGrid(
                 items = filtered,
                 minCellSize = 110.dp,
                 emptyIcon = if (query.isBlank()) Icons.Default.Tv else Icons.Default.Search,
-                emptyMessage = if (query.isBlank()) androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.empty_category_no_series) else androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.empty_category_search_no_series),
+                emptyMessage = if (query.isBlank()) stringResource(R.string.empty_category_no_series) else stringResource(R.string.empty_category_search_no_series),
                 itemKey = { it.id },
             ) { row ->
                 PosterCard(

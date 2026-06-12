@@ -23,18 +23,18 @@ import kotlinx.coroutines.withContext
  */
 object M3UParser {
 
-    suspend fun parseAsync(rawText: String): ParsedM3UPlaylist =
-        withContext(Dispatchers.Default) { parse(rawText) }
+    suspend fun parseAsync(rawText: String, channelFallback: String): ParsedM3UPlaylist =
+        withContext(Dispatchers.Default) { parse(rawText, channelFallback) }
 
     @Throws(M3UParserException::class)
-    fun parse(rawText: String): ParsedM3UPlaylist {
+    fun parse(rawText: String, channelFallback: String): ParsedM3UPlaylist {
         if (rawText.isBlank()) throw M3UParserException.Empty
 
         val normalised = stripBom(rawText)
             .replace("\r\n", "\n")
             .replace("\r", "\n")
-            .replace(" ", "\n")
-            .replace(" ", "\n")
+            .replace(" ", "\n")
+            .replace(" ", "\n")
 
         val rawLines = normalised.split("\n")
         val lines = joinContinuations(rawLines)
@@ -57,7 +57,7 @@ object M3UParser {
                 }
                 line.startsWith("#EXTINF", ignoreCase = true) -> {
                     // Flush any orphan pending channel (no URL line followed).
-                    pending = parseExtInf(line, pendingExtGroup)
+                    pending = parseExtInf(line, pendingExtGroup, channelFallback)
                     pendingExtGroup = null
                 }
                 line.startsWith("#EXTVLCOPT:", ignoreCase = true) -> {
@@ -144,7 +144,7 @@ object M3UParser {
         return attrs["x-tvg-url"] ?: attrs["url-tvg"]
     }
 
-    private fun parseExtInf(line: String, defaultGroup: String?): ChannelBuilder {
+    private fun parseExtInf(line: String, defaultGroup: String?, channelFallback: String): ChannelBuilder {
         // Strip the prefix and optional duration.
         // Examples:
         //   #EXTINF:-1 tvg-id="abc" tvg-name="Foo" group-title="News",Foo
@@ -179,7 +179,7 @@ object M3UParser {
         val name = when {
             display.isNotBlank() && embeddedUrl == null -> display
             !tvgName.isNullOrBlank() -> tvgName
-            else -> display.ifBlank { "Channel" }
+            else -> display.ifBlank { channelFallback }
         }
 
         return ChannelBuilder(

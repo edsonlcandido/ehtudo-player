@@ -55,12 +55,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.android.anotheriptvplayer.R
 import dev.android.anotheriptvplayer.model.Playlist
 import dev.android.anotheriptvplayer.model.PlaylistKind
 import dev.android.anotheriptvplayer.ui.LocalPlaylistRepository
@@ -86,10 +88,10 @@ fun PlaylistScreen(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Playlists") },
+                title = { Text(stringResource(R.string.playlist_title)) },
                 actions = {
                     IconButton(onClick = { showTypeSheet = true }) {
-                        Icon(Icons.Default.Add, contentDescription = "Add playlist")
+                        Icon(Icons.Default.Add, contentDescription = stringResource(R.string.playlist_add_cd))
                     }
                 },
             )
@@ -195,7 +197,7 @@ private fun PlaylistRow(
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = playlist.serverUrl.ifEmpty { "Local file" },
+                    text = playlist.serverUrl.ifEmpty { stringResource(R.string.playlist_server_local) },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -209,7 +211,7 @@ private fun PlaylistRow(
                 IconButton(onClick = { menuExpanded = true }) {
                     Icon(
                         imageVector = Icons.Default.MoreVert,
-                        contentDescription = "More options",
+                        contentDescription = stringResource(R.string.playlist_more_cd),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -218,7 +220,7 @@ private fun PlaylistRow(
                     onDismissRequest = { menuExpanded = false },
                 ) {
                     DropdownMenuItem(
-                        text = { Text("Edit") },
+                        text = { Text(stringResource(R.string.common_edit)) },
                         leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
                         onClick = {
                             menuExpanded = false
@@ -226,7 +228,7 @@ private fun PlaylistRow(
                         },
                     )
                     DropdownMenuItem(
-                        text = { Text("Delete") },
+                        text = { Text(stringResource(R.string.common_delete)) },
                         leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
                         colors = MenuDefaults.itemColors(
                             textColor = MaterialTheme.colorScheme.error,
@@ -252,9 +254,9 @@ private fun DeleteConfirmDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Delete, contentDescription = null) },
-        title = { Text("Delete playlist?") },
+        title = { Text(stringResource(R.string.playlist_delete_title)) },
         text = {
-            Text("\"$playlistName\" will be removed. This can't be undone.")
+            Text(stringResource(R.string.playlist_delete_message, playlistName))
         },
         confirmButton = {
             TextButton(
@@ -263,11 +265,11 @@ private fun DeleteConfirmDialog(
                     contentColor = MaterialTheme.colorScheme.error,
                 ),
             ) {
-                Text("Delete")
+                Text(stringResource(R.string.common_delete))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
         },
     )
 }
@@ -306,12 +308,12 @@ private fun EmptyState(modifier: Modifier = Modifier, onAdd: () -> Unit) {
         )
         Spacer(Modifier.height(20.dp))
         Text(
-            text = "No playlists yet",
+            text = stringResource(R.string.empty_no_playlists),
             style = MaterialTheme.typography.titleLarge,
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "Add your first IPTV playlist to start watching.",
+            text = stringResource(R.string.empty_no_playlists_subtitle),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -320,7 +322,7 @@ private fun EmptyState(modifier: Modifier = Modifier, onAdd: () -> Unit) {
         Button(onClick = onAdd) {
             Icon(Icons.Default.Add, contentDescription = null)
             Spacer(Modifier.width(8.dp))
-            Text("Add Playlist")
+            Text(stringResource(R.string.empty_add_playlist))
         }
     }
 }
@@ -340,22 +342,22 @@ private fun PlaylistTypeSheet(
                 .padding(bottom = 32.dp),
         ) {
             Text(
-                text = "Add Playlist",
+                text = stringResource(R.string.empty_add_playlist),
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(vertical = 8.dp),
             )
             Spacer(Modifier.height(8.dp))
             TypeRow(
                 icon = Icons.Default.Dns,
-                title = "Xtream Codes",
-                subtitle = "Connect with server URL, username and password",
+                title = stringResource(R.string.playlist_xtream_type),
+                subtitle = stringResource(R.string.playlist_xtream_subtitle),
                 onClick = { onSelect(PlaylistKind.XTREAM) },
             )
             Spacer(Modifier.height(8.dp))
             TypeRow(
                 icon = Icons.Default.PlaylistPlay,
-                title = "M3U Playlist",
-                subtitle = "Load from an M3U / M3U8 link or file",
+                title = stringResource(R.string.playlist_m3u_type),
+                subtitle = stringResource(R.string.playlist_m3u_subtitle),
                 onClick = { onSelect(PlaylistKind.M3U) },
             )
         }

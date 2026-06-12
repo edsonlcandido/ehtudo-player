@@ -41,12 +41,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import dev.android.anotheriptvplayer.R
 import dev.android.anotheriptvplayer.model.Playlist
 import dev.android.anotheriptvplayer.model.PlaylistKind
 import dev.android.anotheriptvplayer.networking.XtreamApiClient
@@ -99,15 +101,9 @@ fun AddXtreamPlaylistScreen(
         username.isNotBlank() &&
         password.isNotBlank()
 
-    val verifyingMessage = androidx.compose.ui.res.stringResource(
-        dev.android.anotheriptvplayer.R.string.add_xtream_verifying,
-    )
-    val authFailedMessage = androidx.compose.ui.res.stringResource(
-        dev.android.anotheriptvplayer.R.string.add_xtream_auth_failed,
-    )
-    val saveFailedMessage = androidx.compose.ui.res.stringResource(
-        dev.android.anotheriptvplayer.R.string.add_xtream_save_failed,
-    )
+    val verifyingMessage = stringResource(R.string.add_xtream_verifying)
+    val authFailedMessage = stringResource(R.string.add_xtream_auth_failed)
+    val saveFailedMessage = stringResource(R.string.add_xtream_save_failed)
     fun save() {
         if (!isValid || isSaving) return
         focusManager.clearFocus()
@@ -190,16 +186,19 @@ fun AddXtreamPlaylistScreen(
             topBar = {
                 TopAppBar(
                     title = {
-                        Text(if (editing != null) "Edit Xtream Playlist" else "New Xtream Playlist")
+                        Text(
+                            if (editing != null) stringResource(R.string.xtream_screen_title_edit)
+                            else stringResource(R.string.xtream_screen_title_new)
+                        )
                     },
                     navigationIcon = {
                         IconButton(onClick = onCancel, enabled = !isSaving) {
-                            Icon(Icons.Default.Close, contentDescription = "Cancel")
+                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.xtream_close_cd))
                         }
                     },
                     actions = {
                         TextButton(onClick = ::save, enabled = isValid && !isSaving) {
-                            Text("Save")
+                            Text(stringResource(R.string.common_save))
                         }
                     },
                 )
@@ -213,11 +212,11 @@ fun AddXtreamPlaylistScreen(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                SectionHeader("Playlist Info")
+                SectionHeader(stringResource(R.string.xtream_section_info))
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Name") },
+                    label = { Text(stringResource(R.string.settings_name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(
@@ -231,7 +230,7 @@ fun AddXtreamPlaylistScreen(
                 OutlinedTextField(
                     value = serverUrl,
                     onValueChange = { serverUrl = it },
-                    label = { Text("Server URL") },
+                    label = { Text(stringResource(R.string.xtream_field_server_url)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(
@@ -244,11 +243,11 @@ fun AddXtreamPlaylistScreen(
                 )
 
                 Spacer(Modifier.height(4.dp))
-                SectionHeader("Credentials")
+                SectionHeader(stringResource(R.string.xtream_section_credentials))
                 OutlinedTextField(
                     value = username,
                     onValueChange = { username = it },
-                    label = { Text("Username") },
+                    label = { Text(stringResource(R.string.xtream_field_username)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
@@ -259,7 +258,7 @@ fun AddXtreamPlaylistScreen(
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text("Password") },
+                    label = { Text(stringResource(R.string.xtream_field_password)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     visualTransformation = if (passwordVisible) {
@@ -281,9 +280,9 @@ fun AddXtreamPlaylistScreen(
                                     Icons.Default.Visibility
                                 },
                                 contentDescription = if (passwordVisible) {
-                                    "Hide password"
+                                    stringResource(R.string.xtream_password_hide)
                                 } else {
-                                    "Show password"
+                                    stringResource(R.string.xtream_password_show)
                                 },
                             )
                         }
@@ -291,7 +290,7 @@ fun AddXtreamPlaylistScreen(
                 )
 
                 Spacer(Modifier.height(4.dp))
-                SectionHeader("Content Settings")
+                SectionHeader(stringResource(R.string.xtream_section_content))
                 AdultContentToggle(
                     checked = filterAdultContent,
                     onCheckedChange = { filterAdultContent = it },
@@ -306,11 +305,11 @@ fun AddXtreamPlaylistScreen(
         errorMessage?.let { msg ->
             AlertDialog(
                 onDismissRequest = { errorMessage = null },
-                title = { Text(androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.add_xtream_connection_failed)) },
+                title = { Text(stringResource(R.string.add_xtream_connection_failed)) },
                 text = { Text(msg) },
                 confirmButton = {
                     TextButton(onClick = { errorMessage = null }) {
-                        Text(androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.common_ok))
+                        Text(stringResource(R.string.common_ok))
                     }
                 },
             )
@@ -333,12 +332,12 @@ private fun AdultContentToggle(checked: Boolean, onCheckedChange: (Boolean) -> U
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Filter adult content",
+                    text = stringResource(R.string.settings_adult_filter),
                     style = MaterialTheme.typography.bodyLarge,
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    text = "Hide channels and categories flagged as adult.",
+                    text = stringResource(R.string.settings_adult_filter_subtitle),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

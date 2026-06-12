@@ -1,0 +1,310 @@
+<resources>
+    <string name="app_name">Another IPTV Player</string>
+
+    <!-- Common controls -->
+    <string name="common_back">Voltar</string>
+    <string name="common_cancel">Cancelar</string>
+    <string name="common_save">Salvar</string>
+    <string name="common_delete">Excluir</string>
+    <string name="common_edit">Editar</string>
+    <string name="common_ok">OK</string>
+    <string name="common_search">Buscar</string>
+    <string name="common_refresh">Atualizar</string>
+    <string name="common_play">Reproduzir</string>
+    <string name="common_pause">Pausar</string>
+    <string name="common_retry">Tentar novamente</string>
+    <string name="common_show">Mostrar</string>
+    <string name="common_hide">Ocultar</string>
+    <string name="common_loading">Carregando…</string>
+    <string name="common_unnamed">Sem nome</string>
+
+    <!-- Screen titles -->
+    <string name="screen_playlists">Listas</string>
+    <string name="screen_live_tv">TV ao vivo</string>
+    <string name="screen_movies">Filmes</string>
+    <string name="screen_series">Séries</string>
+    <string name="screen_settings">Configurações</string>
+    <string name="screen_search">Buscar</string>
+    <string name="screen_downloads">Downloads</string>
+    <string name="screen_watch_history">Histórico</string>
+    <string name="screen_m3u_channels">Canais ao vivo</string>
+    <string name="screen_favorites">Favoritos</string>
+
+    <!-- Shelves -->
+    <string name="shelf_continue_watching">Continuar assistindo</string>
+    <string name="shelf_recently_added">Adicionados recentemente</string>
+
+    <!-- Empty states -->
+    <string name="empty_no_playlists">Nenhuma lista ainda</string>
+    <string name="empty_add_playlist">Adicionar lista</string>
+    <string name="empty_no_downloads">Nenhum download ainda.</string>
+    <string name="empty_no_history">Nenhum histórico ainda.</string>
+    <string name="empty_search_idle">Digite para buscar.</string>
+    <string name="empty_search_no_results">Nenhum resultado encontrado.</string>
+    <string name="empty_no_categories">Nenhuma categoria ainda.</string>
+    <string name="empty_categories_hidden">Todas as categorias estão ocultas.</string>
+    <string name="empty_shelf_no_content">Sem conteúdo nesta categoria.</string>
+    <string name="empty_category_no_live">Nenhum canal nesta categoria.</string>
+    <string name="empty_category_no_movies">Nenhum filme nesta categoria.</string>
+    <string name="empty_category_no_series">Nenhuma série nesta categoria.</string>
+    <string name="empty_category_search_no_live">Nenhum canal corresponde à sua busca.</string>
+    <string name="empty_category_search_no_movies">Nenhum filme corresponde à sua busca.</string>
+    <string name="empty_category_search_no_series">Nenhuma série corresponde à sua busca.</string>
+    <string name="empty_favorites_live">Nenhum canal favorito.</string>
+    <string name="empty_favorites_vod">Nenhum filme favorito.</string>
+    <string name="empty_favorites_series">Nenhuma série favorita.</string>
+
+    <!-- Settings -->
+    <string name="settings_card_player">Player</string>
+    <string name="settings_card_library">Biblioteca</string>
+    <string name="settings_card_about">Sobre</string>
+    <string name="settings_card_subscription">Assinatura</string>
+    <string name="settings_card_stats">Estatísticas de conteúdo</string>
+    <string name="settings_card_content">Conteúdo</string>
+    <string name="settings_player_pip">Picture-in-Picture</string>
+    <string name="settings_player_pip_subtitle">Continua a reprodução em uma janela flutuante ao sair do app.</string>
+    <string name="settings_player_bg">Reprodução em segundo plano</string>
+    <string name="settings_player_bg_subtitle">Mantém o áudio tocando com o app em segundo plano.</string>
+    <string name="settings_player_long_press">Pressionar e segurar para 2× a velocidade</string>
+    <string name="settings_player_long_press_subtitle">Aumenta temporariamente a velocidade ao segurar a tela.</string>
+    <string name="settings_library_downloads">Downloads</string>
+    <string name="settings_library_downloads_subtitle">Fila de downloads e itens concluídos.</string>
+    <string name="settings_library_history">Histórico de exibição</string>
+    <string name="settings_library_history_subtitle">Retome conteúdos assistidos recentemente.</string>
+    <string name="settings_version">Versão</string>
+    <string name="settings_re_download">Baixar catálogo novamente</string>
+    <string name="settings_user">Usuário</string>
+    <string name="settings_password">Senha</string>
+    <string name="settings_loading_info">Carregando informações…</string>
+    <string name="settings_active_connection">Conexões ativas</string>
+    <string name="settings_max_connection">Conexões máximas</string>
+    <string name="settings_unlimited">Ilimitado</string>
+    <string name="settings_unlimited_or_unknown">Ilimitado ou desconhecido</string>
+    <string name="settings_expired">Expirado</string>
+    <string name="settings_expires_today">Expira hoje</string>
+    <string name="settings_days_left">%1$d dias</string>
+    <string name="settings_live_count">Canais ao vivo</string>
+    <string name="settings_vod_count">Filmes</string>
+    <string name="settings_series_count">Séries</string>
+    <string name="settings_adult_filter">Filtrar conteúdo adulto</string>
+    <string name="settings_adult_filter_subtitle">Oculta categorias/canais/filmes marcados como adultos. Re-baixará o catálogo ao ser ativado.</string>
+    <string name="settings_github_subtitle">Código-fonte, issues e contribuições.</string>
+    <string name="settings_github_label">Repositório no GitHub</string>
+    <string name="settings_card_playlist_info">Informações da lista</string>
+    <string name="settings_card_server">Servidor</string>
+    <string name="settings_name">Nome</string>
+    <string name="settings_server">Servidor</string>
+    <string name="settings_unknown_error">Erro desconhecido</string>
+    <string name="settings_subscription_unknown">Sem informações de assinatura.</string>
+    <string name="settings_subscription_status">Status</string>
+
+    <!-- Player overlay -->
+    <string name="player_pip">Picture-in-Picture</string>
+    <string name="player_subtitles">Configurações de legenda</string>
+    <string name="player_tracks">Faixas</string>
+    <string name="player_seek_back_10">Voltar 10 segundos</string>
+    <string name="player_seek_fwd_10">Avançar 10 segundos</string>
+    <string name="player_next_episode">Próximo episódio</string>
+    <string name="player_section_subtitles">Legendas</string>
+    <string name="player_section_audio">Áudio</string>
+    <string name="player_section_video">Vídeo</string>
+    <string name="player_mpv_recent_logs">mpv (últimas %1$d linhas):</string>
+    <string name="player_brightness">Brilho</string>
+    <string name="player_volume">Volume</string>
+    <string name="player_episode_default_format">Episódio %1$s</string>
+
+    <!-- Subtitle sheet -->
+    <string name="subtitle_sheet_title">Configurações de legenda</string>
+    <string name="subtitle_font_size">Tamanho da fonte</string>
+    <string name="subtitle_outline">Contorno</string>
+    <string name="subtitle_delay_seconds">Atraso (s)</string>
+    <string name="subtitle_italic">Itálico</string>
+    <string name="subtitle_background">Fundo</string>
+
+    <!-- Playlist add / verify -->
+    <string name="add_xtream_verifying">Verificando…</string>
+    <string name="add_xtream_save_failed">Falha ao salvar.</string>
+    <string name="add_xtream_auth_failed">Falha na autenticação Xtream.</string>
+    <string name="add_xtream_connection_failed">Falha na conexão</string>
+    <string name="xtream_error_invalid_url">URL Xtream inválida: %1$s</string>
+    <string name="xtream_error_network">Erro de rede: %1$s</string>
+    <string name="xtream_error_decoding">Não foi possível decodificar a resposta do servidor: %1$s</string>
+    <string name="xtream_error_server">Erro do servidor: %1$s</string>
+    <string name="add_m3u_importing">Importando…</string>
+    <string name="add_m3u_reading_file">Lendo arquivo…</string>
+    <string name="add_m3u_connecting">Conectando…</string>
+    <string name="add_m3u_parsing">Analisando lista…</string>
+    <string name="add_m3u_saving_with_count">Salvando canais… (%1$d)</string>
+    <string name="add_m3u_invalid_url">URL inválida</string>
+    <string name="add_m3u_network_error">Erro de rede: %1$s</string>
+    <string name="add_m3u_server_error">Erro do servidor: HTTP %1$d</string>
+    <string name="add_m3u_file_read_failed">Não foi possível ler o arquivo</string>
+    <string name="add_m3u_empty">A lista está vazia.</string>
+    <string name="add_m3u_no_channels">Nenhum canal válido encontrado.</string>
+
+    <!-- Category picker -->
+    <string name="picker_live_categories">Categorias ao vivo</string>
+    <string name="picker_vod_categories">Categorias de filmes</string>
+    <string name="picker_series_categories">Categorias de séries</string>
+    <string name="picker_search_category">Buscar categoria</string>
+
+    <!-- Detail screens -->
+    <string name="detail_loading_movie">Carregando filme…</string>
+    <string name="detail_loading_series">Carregando série…</string>
+    <string name="detail_loading_playlist">Carregando lista…</string>
+    <string name="detail_seasons_loading">Carregando temporadas…</string>
+    <string name="detail_seasons_failed">Falha ao carregar temporadas.</string>
+    <string name="detail_no_seasons">Sem informações de temporada para esta série.</string>
+    <string name="detail_no_episodes">Sem episódios nesta temporada.</string>
+    <string name="detail_watch">Assistir</string>
+    <string name="detail_director">Diretor</string>
+    <string name="detail_trailer_failed">Não foi possível abrir o trailer.</string>
+    <string name="detail_episode_default">Episódio</string>
+    <string name="detail_episode_count_format">%1$d episódios</string>
+    <string name="detail_favorite_add">Adicionar aos favoritos</string>
+    <string name="detail_favorite_remove">Remover dos favoritos</string>
+    <string name="detail_section_cast">Elenco</string>
+    <string name="detail_seasons">Temporadas</string>
+    <string name="detail_trailer">Trailer</string>
+    <string name="detail_show_less">Mostrar menos</string>
+    <string name="detail_show_more">Mostrar mais</string>
+    <string name="detail_episode_default_fallback">Episódio</string>
+
+    <!-- M3U dashboard -->
+    <string name="m3u_load_error_generic">Algo deu errado.</string>
+    <string name="m3u_other_group">Outros</string>
+
+    <!-- Search content type filter chips -->
+    <string name="search_type_all">Todos</string>
+    <string name="search_type_live">Ao vivo</string>
+    <string name="search_min_chars">Digite pelo menos 2 caracteres.</string>
+    <string name="search_no_results_for">Nenhum resultado para \"%1$s\".</string>
+    <string name="search_more_results">Mais %1$d resultados</string>
+
+    <!-- Downloads status -->
+    <string name="download_status_queued">Na fila</string>
+    <string name="download_status_downloading">Baixando</string>
+    <string name="download_status_downloading_progress">Baixando — %1$d%%</string>
+    <string name="download_status_downloading_pending">Baixando…</string>
+    <string name="download_status_completed">Concluído</string>
+    <string name="download_status_failed">Falhou</string>
+    <string name="download_cancel">Cancelar</string>
+    <string name="download_channel_name">Downloads</string>
+    <string name="download_channel_description">Notificação em segundo plano para downloads de filmes e episódios</string>
+
+    <!-- Sync / content-store progress -->
+    <string name="sync_preparing">Preparando…</string>
+    <string name="sync_list_preparing">Preparando lista…</string>
+    <string name="sync_clearing">Limpando conteúdo…</string>
+    <string name="sync_categories">Buscando categorias…</string>
+    <string name="sync_live">Buscando canais ao vivo…</string>
+    <string name="sync_movies">Buscando filmes…</string>
+    <string name="sync_series">Buscando séries…</string>
+    <string name="sync_persisting">Salvando no banco de dados…</string>
+
+    <!-- Player resolve errors -->
+    <string name="resolve_playlist_not_found">Lista não encontrada.</string>
+    <string name="resolve_movie_not_found">Filme não encontrado.</string>
+    <string name="resolve_episode_not_found">Episódio não encontrado.</string>
+    <string name="resolve_channel_not_found">Canal não encontrado.</string>
+    <string name="resolve_player_init_failed">Falha ao iniciar o player: %1$s</string>
+
+    <!-- External player -->
+    <string name="external_player_not_found">Nenhum app encontrado capaz de reproduzir vídeo (VLC, MX Player, …).</string>
+
+    <!-- Errors -->
+    <string name="error_server_unreachable">Não foi possível alcançar o servidor.</string>
+    <string name="error_timeout">A conexão expirou.</string>
+    <string name="error_player_init">Falha ao iniciar o player.</string>
+    <string name="error_generic">Algo deu errado.</string>
+
+    <!-- Player track sheet -->
+    <string name="track_off">Desligado</string>
+    <string name="track_index">Faixa %1$d</string>
+
+    <!-- MPV log → user-facing classification -->
+    <string name="mpv_error_forbidden">O acesso a este conteúdo foi negado.</string>
+    <string name="mpv_error_unauthorized">Este conteúdo requer autorização.</string>
+    <string name="mpv_error_not_found">Conteúdo não encontrado.</string>
+    <string name="mpv_error_playback_init">Não foi possível iniciar a reprodução.</string>
+    <string name="mpv_error_unsupported">Este conteúdo não pode ser reproduzido neste dispositivo.</string>
+    <string name="mpv_error_nothing_to_play">Nenhum stream reproduzível encontrado.</string>
+    <string name="mpv_error_av_init">Não foi possível iniciar a saída de áudio/vídeo.</string>
+    <string name="mpv_error_check_network">Falha na reprodução. Verifique sua conexão de rede.</string>
+
+    <!-- Playlist screen -->
+    <string name="playlist_title">Listas</string>
+    <string name="playlist_add_cd">Adicionar lista</string>
+    <string name="playlist_server_local">Arquivo local</string>
+    <string name="playlist_more_cd">Mais opções</string>
+    <string name="playlist_xtream_type">Códigos Xtream</string>
+
+    <!-- Xtream add / edit screen -->
+    <string name="xtream_screen_title_edit">Editar lista Xtream</string>
+    <string name="xtream_screen_title_new">Nova lista Xtream</string>
+    <string name="xtream_close_cd">Cancelar</string>
+    <string name="xtream_section_info">Informações da lista</string>
+    <string name="xtream_field_server_url">URL do servidor</string>
+    <string name="xtream_section_credentials">Credenciais</string>
+    <string name="xtream_field_username">Usuário</string>
+    <string name="xtream_field_password">Senha</string>
+    <string name="xtream_password_hide">Ocultar senha</string>
+    <string name="xtream_password_show">Mostrar senha</string>
+    <string name="xtream_section_content">Configurações de conteúdo</string>
+
+    <!-- M3U add / edit screen -->
+    <string name="m3u_close_cd">Cancelar</string>
+    <string name="m3u_section_info">Informações da lista</string>
+    <string name="m3u_section_source">Origem</string>
+    <string name="m3u_selected_file">Arquivo selecionado</string>
+    <string name="m3u_remove_file_cd">Remover arquivo</string>
+
+    <!-- Dashboard / category / picker -->
+    <string name="dashboard_categories_cd">Categorias</string>
+    <string name="dashboard_favorites_cd">Favoritos</string>
+    <string name="dashboard_refresh_cd">Atualizar</string>
+    <string name="dashboard_retry">Tentar novamente</string>
+    <string name="category_label_fallback">Categoria</string>
+    <string name="category_search_movies">Buscar filme</string>
+    <string name="category_search_live">Buscar canal</string>
+    <string name="category_search_series">Buscar série</string>
+    <string name="category_clear_cd">Limpar</string>
+    <string name="category_picker_hidden_header">Ocultas</string>
+
+    <!-- Settings / misc -->
+    <string name="settings_timezone">Fuso horário</string>
+    <string name="settings_message">Mensagem</string>
+    <string name="settings_re_download_subtitle">Baixa novamente as categorias, filmes e séries do servidor.</string>
+
+    <!-- M3U parser fallback (display name when channel title is blank) -->
+    <string name="m3u_channel_fallback">Canal</string>
+
+    <!-- Playlist delete confirmation -->
+    <string name="playlist_delete_title">Excluir lista?</string>
+    <string name="playlist_delete_message">\"%1$s\" será removida. Isso não pode ser desfeito.</string>
+    <string name="empty_no_playlists_subtitle">Adicione sua primeira lista IPTV para começar a assistir.</string>
+
+    <!-- Add Playlist bottom sheet -->
+    <string name="playlist_xtream_subtitle">Conecte com URL do servidor, usuário e senha</string>
+    <string name="playlist_m3u_type">Lista M3U</string>
+    <string name="playlist_m3u_subtitle">Carregar a partir de um link ou arquivo M3U / M3U8</string>
+
+    <!-- M3U add / edit screen extras -->
+    <string name="m3u_screen_title_edit">Editar lista M3U</string>
+    <string name="m3u_screen_title_new">Nova lista M3U</string>
+    <string name="m3u_field_url">URL M3U / M3U8</string>
+    <string name="m3u_url_placeholder">https://…</string>
+    <string name="m3u_choose_file">Escolher arquivo .m3u / .m3u8</string>
+    <string name="m3u_form_help">Digite uma URL remota ou escolha um arquivo local de lista. Escolher um arquivo desabilita o campo de URL.</string>
+    <string name="m3u_default_filename">lista.m3u</string>
+
+    <!-- Common -->
+    <string name="common_or">OU</string>
+
+    <!-- Detail screens extras -->
+    <string name="detail_section_plot">Sinopse</string>
+    <string name="detail_season_format">Temporada %1$d</string>
+
+    <!-- Search -->
+    <string name="search_field_placeholder">Canal, filme ou série</string>
+</resources>

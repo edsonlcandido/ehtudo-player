@@ -32,10 +32,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import dev.android.anotheriptvplayer.R
 import dev.android.anotheriptvplayer.data.local.EpisodeEntity
 import dev.android.anotheriptvplayer.data.local.SeasonEntity
 
@@ -71,7 +73,7 @@ fun SeasonTabBar(
                 MaterialTheme.colorScheme.onSurface
             }
             Text(
-                text = season.name ?: "Sezon ${season.seasonNumber}",
+                text = season.name ?: stringResource(R.string.detail_season_format, season.seasonNumber),
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = labelColor,
@@ -99,7 +101,7 @@ fun EpisodeList(
 ) {
     if (episodes.isEmpty()) {
         Text(
-            text = androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.detail_no_episodes),
+            text = stringResource(R.string.detail_no_episodes),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = modifier.padding(horizontal = 16.dp),
@@ -143,8 +145,8 @@ private fun EpisodeRow(
             Text(
                 text = formatEpisodeTitle(
                     episode = episode,
-                    fallbackTitle = androidx.compose.ui.res.stringResource(
-                        dev.android.anotheriptvplayer.R.string.detail_episode_default,
+                    fallbackTitle = stringResource(
+                        dev.android.anotheriptvplayer.R.string.detail_episode_default_fallback,
                     ),
                 ),
                 style = MaterialTheme.typography.bodyMedium,
@@ -245,7 +247,7 @@ private fun EpisodeMetaRow(episode: EpisodeEntity) {
 /** `"3. Bölüm Adı"` style — matches iOS `episodeTitle`. */
 private fun formatEpisodeTitle(
     episode: EpisodeEntity,
-    fallbackTitle: String = "Episode",
+    fallbackTitle: String,
 ): String {
     val numPrefix = episode.episodeNum?.let { "$it. " }.orEmpty()
     val raw = episode.title?.trim().orEmpty()

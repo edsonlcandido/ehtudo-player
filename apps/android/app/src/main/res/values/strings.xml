@@ -224,4 +224,91 @@
     <string name="mpv_error_nothing_to_play">No playable stream found.</string>
     <string name="mpv_error_av_init">Audio/video output could not start.</string>
     <string name="mpv_error_check_network">Playback failed. Check your network connection.</string>
+
+    <!-- Playlist screen -->
+    <string name="playlist_title">Playlists</string>
+    <string name="playlist_add_cd">Add playlist</string>
+    <string name="playlist_server_local">Local file</string>
+    <string name="playlist_more_cd">More options</string>
+    <string name="playlist_xtream_type">Xtream Codes</string>
+
+    <!-- Xtream add / edit screen -->
+    <string name="xtream_screen_title_edit">Edit Xtream Playlist</string>
+    <string name="xtream_screen_title_new">New Xtream Playlist</string>
+    <string name="xtream_close_cd">Cancel</string>
+    <string name="xtream_section_info">Playlist Info</string>
+    <string name="xtream_field_server_url">Server URL</string>
+    <string name="xtream_section_credentials">Credentials</string>
+    <string name="xtream_field_username">Username</string>
+    <string name="xtream_field_password">Password</string>
+    <string name="xtream_password_hide">Hide password</string>
+    <string name="xtream_password_show">Show password</string>
+    <string name="xtream_section_content">Content Settings</string>
+
+    <!-- M3U add / edit screen -->
+    <string name="m3u_close_cd">Cancel</string>
+    <string name="m3u_section_info">Playlist Info</string>
+    <string name="m3u_section_source">Source</string>
+    <string name="m3u_selected_file">Selected file</string>
+    <string name="m3u_remove_file_cd">Remove file</string>
+
+    <!-- Dashboard / category / picker -->
+    <string name="dashboard_categories_cd">Categories</string>
+    <string name="dashboard_favorites_cd">Favorites</string>
+    <string name="dashboard_refresh_cd">Refresh</string>
+    <string name="dashboard_retry">Retry</string>
+    <string name="category_label_fallback">Category</string>
+    <string name="category_search_movies">Search movie</string>
+    <string name="category_search_live">Search channel</string>
+    <string name="category_search_series">Search series</string>
+    <string name="category_clear_cd">Clear</string>
+    <string name="picker_search_category">Search category</string>
+
+    <!-- Detail screens -->
+    <string name="detail_section_cast">Cast</string>
+    <string name="detail_seasons">Seasons</string>
+    <string name="detail_trailer">Trailer</string>
+    <string name="detail_show_less">Show less</string>
+    <string name="detail_show_more">Show more</string>
+    <string name="detail_episode_default_fallback">Episode</string>
+
+    <!-- Settings / misc -->
+    <string name="settings_timezone">Time zone</string>
+    <string name="settings_message">Message</string>
+    <string name="settings_re_download_subtitle">Re-download categories, movies and series from the server.</string>
+
+    <!-- M3U parser fallback (display name when channel title is blank) -->
+    <string name="m3u_channel_fallback">Channel</string>
+
+    <!-- Playlist delete confirmation -->
+    <string name="playlist_delete_title">Delete playlist?</string>
+    <string name="playlist_delete_message">\"%1$s\" will be removed. This can\'t be undone.</string>
+    <string name="empty_no_playlists_subtitle">Add your first IPTV playlist to start watching.</string>
+
+    <!-- Add Playlist bottom sheet -->
+    <string name="playlist_xtream_subtitle">Connect with server URL, username and password</string>
+    <string name="playlist_m3u_type">M3U Playlist</string>
+    <string name="playlist_m3u_subtitle">Load from an M3U / M3U8 link or file</string>
+
+    <!-- M3U add / edit screen extras -->
+    <string name="m3u_screen_title_edit">Edit M3U Playlist</string>
+    <string name="m3u_screen_title_new">New M3U Playlist</string>
+    <string name="m3u_field_url">M3U / M3U8 URL</string>
+    <string name="m3u_url_placeholder">https://…</string>
+    <string name="m3u_choose_file">Choose .m3u / .m3u8 file</string>
+    <string name="m3u_form_help">Enter a remote URL or pick a local playlist file. Choosing a file disables the URL field.</string>
+    <string name="m3u_default_filename">playlist.m3u</string>
+
+    <!-- Common -->
+    <string name="common_or">OR</string>
+
+    <!-- Detail screens extras -->
+    <string name="detail_section_plot">Plot</string>
+    <string name="detail_season_format">Season %1$d</string>
+
+    <!-- Category picker -->
+    <string name="category_picker_hidden_header">Hidden</string>
+
+    <!-- Search -->
+    <string name="search_field_placeholder">Channel, movie or series</string>
 </resources>

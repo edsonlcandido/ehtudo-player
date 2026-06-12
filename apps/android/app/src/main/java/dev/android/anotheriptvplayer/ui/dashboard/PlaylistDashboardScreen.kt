@@ -52,6 +52,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.android.anotheriptvplayer.R
 import dev.android.anotheriptvplayer.data.local.CategoryEntity
 import dev.android.anotheriptvplayer.data.local.LiveStreamWithCategory
 import dev.android.anotheriptvplayer.data.local.SeriesWithCategory
@@ -137,13 +138,13 @@ fun PlaylistDashboardScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
                     // Search is available on every tab.
                     IconButton(onClick = onOpenSearch) {
-                        Icon(Icons.Default.Search, contentDescription = "Ara")
+                        Icon(Icons.Default.Search, contentDescription = stringResource(R.string.common_search))
                     }
                     // Content-tab actions: jump to a category + favorites +
                     // refresh. The Settings tab has its own "İçeriği yeniden
@@ -153,13 +154,13 @@ fun PlaylistDashboardScreen(
                         IconButton(onClick = { pickerType = typeForCurrentTab }) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.FormatListBulleted,
-                                contentDescription = "Kategoriler",
+                                contentDescription = stringResource(R.string.dashboard_categories_cd),
                             )
                         }
                         IconButton(onClick = { onOpenFavorites(typeForCurrentTab) }) {
                             Icon(
                                 imageVector = Icons.Default.Star,
-                                contentDescription = "Favoriler",
+                                contentDescription = stringResource(R.string.dashboard_favorites_cd),
                                 tint = Color(0xFFFFC107),
                             )
                         }
@@ -173,7 +174,7 @@ fun PlaylistDashboardScreen(
                                 }
                             },
                         ) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Yenile")
+                            Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.dashboard_refresh_cd))
                         }
                     }
                 },
@@ -195,7 +196,7 @@ fun PlaylistDashboardScreen(
             loadError != null && liveCats.isEmpty() && vodCats.isEmpty() && seriesCats.isEmpty() ->
                 ErrorState(
                     modifier = Modifier.padding(innerPadding),
-                    message = loadError ?: "Bilinmeyen hata",
+                    message = loadError ?: stringResource(R.string.settings_unknown_error),
                     onRetry = {
                         val current = playlist ?: return@ErrorState
                         scope.launch { store.loadPlaylistSuspending(current) }
@@ -614,7 +615,7 @@ private fun ErrorState(modifier: Modifier = Modifier, message: String, onRetry: 
             )
             Spacer(Modifier.height(16.dp))
             Button(onClick = onRetry) {
-                Text("Tekrar dene")
+                Text(stringResource(R.string.dashboard_retry))
             }
         }
     }

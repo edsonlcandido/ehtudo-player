@@ -104,6 +104,8 @@ fun AddM3UPlaylistScreen(
     val msgNetworkErrorFmt = stringResource(R.string.add_m3u_network_error)
     val msgServerErrorFmt = stringResource(R.string.add_m3u_server_error)
     val msgSavingFmt = stringResource(R.string.add_m3u_saving_with_count)
+    val channelFallback = stringResource(R.string.m3u_channel_fallback)
+    val defaultFilename = stringResource(R.string.m3u_default_filename)
     var importStatus by remember { mutableStateOf(msgImporting) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
@@ -121,7 +123,7 @@ fun AddM3UPlaylistScreen(
     ) { uri: Uri? ->
         if (uri != null) {
             localFileUri = uri
-            localFileName = fileDisplayName(context, uri)
+            localFileName = fileDisplayName(context, uri, defaultFilename)
         }
     }
 
@@ -142,7 +144,7 @@ fun AddM3UPlaylistScreen(
                     service.fetchRemote(url.trim())
                 }
                 importStatus = msgParsing
-                val parsed = M3UParser.parseAsync(rawText)
+                val parsed = M3UParser.parseAsync(rawText, channelFallback)
 
                 val current = editing
                 val playlist = Playlist.create(
@@ -186,15 +188,20 @@ fun AddM3UPlaylistScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text(if (editing != null) "Edit M3U Playlist" else "New M3U Playlist") },
+                    title = {
+                        Text(
+                            if (editing != null) stringResource(R.string.m3u_screen_title_edit)
+                            else stringResource(R.string.m3u_screen_title_new)
+                        )
+                    },
                     navigationIcon = {
                         IconButton(onClick = onCancel, enabled = !isSaving) {
-                            Icon(Icons.Default.Close, contentDescription = "Cancel")
+                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.m3u_close_cd))
                         }
                     },
                     actions = {
                         TextButton(onClick = ::save, enabled = isValid && !isSaving) {
-                            Text("Save")
+                            Text(stringResource(R.string.common_save))
                         }
                     },
                 )
@@ -208,11 +215,11 @@ fun AddM3UPlaylistScreen(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                SectionHeader("Playlist Info")
+                SectionHeader(stringResource(R.string.m3u_section_info))
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Name") },
+                    label = { Text(stringResource(R.string.settings_name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(
@@ -222,12 +229,12 @@ fun AddM3UPlaylistScreen(
                 )
 
                 Spacer(Modifier.height(4.dp))
-                SectionHeader("Source")
+                SectionHeader(stringResource(R.string.m3u_section_source))
                 OutlinedTextField(
                     value = url,
                     onValueChange = { url = it },
-                    label = { Text("M3U / M3U8 URL") },
-                    placeholder = { Text("https://…") },
+                    label = { Text(stringResource(R.string.m3u_field_url)) },
+                    placeholder = { Text(stringResource(R.string.m3u_url_placeholder)) },
                     singleLine = true,
                     enabled = !hasLocalFile,
                     modifier = Modifier.fillMaxWidth(),
@@ -260,7 +267,7 @@ fun AddM3UPlaylistScreen(
                     ) {
                         Icon(Icons.Default.UploadFile, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("Choose .m3u / .m3u8 file")
+                        Text(stringResource(R.string.m3u_choose_file))
                     }
                 }
 
@@ -280,8 +287,7 @@ fun AddM3UPlaylistScreen(
                 }
 
                 Text(
-                    text = "Enter a remote URL or pick a local playlist file. " +
-                        "Choosing a file disables the URL field.",
+                    text = stringResource(R.string.m3u_form_help),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 4.dp),
@@ -303,7 +309,7 @@ private fun OrDivider() {
     ) {
         HorizontalDivider(modifier = Modifier.weight(1f))
         Text(
-            text = "OR",
+            text = stringResource(R.string.common_or),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 12.dp),
@@ -333,7 +339,7 @@ private fun SelectedFileCard(fileName: String, onRemove: () -> Unit) {
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Selected file",
+                    text = stringResource(R.string.m3u_selected_file),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -345,15 +351,15 @@ private fun SelectedFileCard(fileName: String, onRemove: () -> Unit) {
                 )
             }
             IconButton(onClick = onRemove) {
-                Icon(Icons.Default.Close, contentDescription = "Remove file")
+                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.m3u_remove_file_cd))
             }
         }
     }
 }
 
 /** Resolves a human-readable file name from a content [Uri]. */
-private fun fileDisplayName(context: Context, uri: Uri): String {
-    var name = uri.lastPathSegment?.substringAfterLast('/') ?: "playlist.m3u"
+private fun fileDisplayName(context: Context, uri: Uri, defaultFilename: String): String {
+    var name = uri.lastPathSegment?.substringAfterLast('/') ?: defaultFilename
     runCatching {
         context.contentResolver
             .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)

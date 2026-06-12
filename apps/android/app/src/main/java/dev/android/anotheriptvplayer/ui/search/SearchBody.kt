@@ -44,12 +44,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import dev.android.anotheriptvplayer.R
 import dev.android.anotheriptvplayer.data.local.LiveStreamWithCategory
 import dev.android.anotheriptvplayer.data.local.SeriesWithCategory
 import dev.android.anotheriptvplayer.data.local.VodStreamWithCategory
@@ -141,15 +143,15 @@ fun SearchBody(
             debouncedQuery.isEmpty() -> EmptyHint(
                 icon = Icons.Default.Search,
                 message = if (query.trim().length in 1..1) {
-                    androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.search_min_chars)
+                    stringResource(R.string.search_min_chars)
                 } else {
-                    androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.empty_search_idle)
+                    stringResource(R.string.empty_search_idle)
                 },
             )
             liveResults.isEmpty() && movieResults.isEmpty() && seriesResults.isEmpty() -> EmptyHint(
                 icon = Icons.Default.Search,
-                message = androidx.compose.ui.res.stringResource(
-                    dev.android.anotheriptvplayer.R.string.search_no_results_for,
+                message = stringResource(
+                    R.string.search_no_results_for,
                     debouncedQuery,
                 ),
             )
@@ -170,10 +172,10 @@ fun SearchBody(
 // ---- Filter chips ----
 
 enum class SearchFilter(val displayNameRes: Int) {
-    ALL(dev.android.anotheriptvplayer.R.string.search_type_all),
-    LIVE(dev.android.anotheriptvplayer.R.string.search_type_live),
-    MOVIES(dev.android.anotheriptvplayer.R.string.screen_movies),
-    SERIES(dev.android.anotheriptvplayer.R.string.screen_series),
+    ALL(R.string.search_type_all),
+    LIVE(R.string.search_type_live),
+    MOVIES(R.string.screen_movies),
+    SERIES(R.string.screen_series),
 }
 
 @Composable
@@ -193,7 +195,7 @@ private fun FilterChipRow(selected: SearchFilter, onSelect: (SearchFilter) -> Un
                 if (isSelected) MaterialTheme.colorScheme.onPrimary
                 else MaterialTheme.colorScheme.onSurface
             Text(
-                text = androidx.compose.ui.res.stringResource(f.displayNameRes),
+                text = stringResource(f.displayNameRes),
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                 color = labelColor,
@@ -215,12 +217,12 @@ private fun SearchField(value: String, onValueChange: (String) -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
-        placeholder = { Text("Kanal, film veya dizi") },
+        placeholder = { Text(stringResource(R.string.search_field_placeholder)) },
         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
         trailingIcon = {
             if (value.isNotEmpty()) {
                 IconButton(onClick = { onValueChange("") }) {
-                    Icon(Icons.Default.Clear, contentDescription = "Temizle")
+                    Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.category_clear_cd))
                 }
             }
         },
@@ -261,7 +263,7 @@ private fun ResultsList(
         if (showLive && liveResults.isNotEmpty()) {
             val visible = if (collapseLive) liveResults.take(COLLAPSED_LIMIT) else liveResults
             item(key = "live_header") {
-                SectionHeader(title = androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.search_type_live), count = liveResults.size, icon = Icons.Default.LiveTv)
+                SectionHeader(title = stringResource(R.string.search_type_live), count = liveResults.size, icon = Icons.Default.LiveTv)
             }
             items(visible, key = { "live_${it.id}" }) { row ->
                 ResultRow(
@@ -283,7 +285,7 @@ private fun ResultsList(
         if (showMovies && movieResults.isNotEmpty()) {
             val visible = if (collapseMovies) movieResults.take(COLLAPSED_LIMIT) else movieResults
             item(key = "vod_header") {
-                SectionHeader(title = androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.screen_movies), count = movieResults.size, icon = Icons.Default.Movie)
+                SectionHeader(title = stringResource(R.string.screen_movies), count = movieResults.size, icon = Icons.Default.Movie)
             }
             items(visible, key = { "vod_${it.id}" }) { row ->
                 ResultRow(
@@ -305,7 +307,7 @@ private fun ResultsList(
         if (showSeries && seriesResults.isNotEmpty()) {
             val visible = if (collapseSeries) seriesResults.take(COLLAPSED_LIMIT) else seriesResults
             item(key = "series_header") {
-                SectionHeader(title = androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.screen_series), count = seriesResults.size, icon = Icons.Default.Tv)
+                SectionHeader(title = stringResource(R.string.screen_series), count = seriesResults.size, icon = Icons.Default.Tv)
             }
             items(visible, key = { "series_${it.id}" }) { row ->
                 ResultRow(
@@ -412,7 +414,7 @@ private fun ResultRow(
 @Composable
 private fun MoreLink(remaining: Int, onClick: () -> Unit) {
     Text(
-        text = androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.search_more_results, remaining),
+        text = stringResource(R.string.search_more_results, remaining),
         style = MaterialTheme.typography.labelMedium,
         fontWeight = FontWeight.SemiBold,
         color = MaterialTheme.colorScheme.primary,

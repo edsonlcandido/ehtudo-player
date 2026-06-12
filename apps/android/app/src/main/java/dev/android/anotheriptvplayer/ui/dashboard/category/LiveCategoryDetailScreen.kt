@@ -19,9 +19,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.android.anotheriptvplayer.R
 import dev.android.anotheriptvplayer.ui.LocalPlaylistContentStore
 import dev.android.anotheriptvplayer.ui.dashboard.LiveStreamCard
 
@@ -57,14 +59,14 @@ fun LiveCategoryDetailScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = category?.name ?: "Kategori",
+                        text = category?.name ?: stringResource(R.string.category_label_fallback),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
             )
@@ -74,13 +76,13 @@ fun LiveCategoryDetailScreen(
             CategorySearchField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = "Kanal ara",
+                placeholder = stringResource(R.string.category_search_live),
             )
             CategoryGrid(
                 items = filtered,
                 minCellSize = 110.dp,
                 emptyIcon = if (query.isBlank()) Icons.Default.LiveTv else Icons.Default.Search,
-                emptyMessage = if (query.isBlank()) androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.empty_category_no_live) else androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.empty_category_search_no_live),
+                emptyMessage = if (query.isBlank()) stringResource(R.string.empty_category_no_live) else stringResource(R.string.empty_category_search_no_live),
                 itemKey = { it.id },
             ) { row ->
                 LiveStreamCard(

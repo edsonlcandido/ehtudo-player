@@ -33,10 +33,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.android.anotheriptvplayer.R
 import dev.android.anotheriptvplayer.data.HiddenCategoryStore
 import dev.android.anotheriptvplayer.data.local.CategoryEntity
 import dev.android.anotheriptvplayer.ui.LocalHiddenCategoryStore
@@ -101,11 +103,11 @@ fun CategoryPickerSheet(
             CategorySearchField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = "Kategori ara",
+                placeholder = stringResource(R.string.picker_search_category),
             )
 
             if (visible.isEmpty() && hidden.isEmpty()) {
-                EmptyHint(text = androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.empty_search_no_results))
+                EmptyHint(text = stringResource(R.string.empty_search_no_results))
                 return@Column
             }
 
@@ -131,7 +133,7 @@ fun CategoryPickerSheet(
                 if (hidden.isNotEmpty()) {
                     item(key = "hidden_header") {
                         Text(
-                            text = "Gizli",
+                            text = stringResource(R.string.category_picker_hidden_header),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -193,7 +195,7 @@ private fun PickerRow(
         IconButton(onClick = onToggle, modifier = Modifier.size(36.dp)) {
             Icon(
                 imageVector = if (isHidden) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                contentDescription = if (isHidden) androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.common_show) else androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.common_hide),
+                contentDescription = if (isHidden) stringResource(R.string.common_show) else stringResource(R.string.common_hide),
                 tint = if (isHidden) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp),
             )

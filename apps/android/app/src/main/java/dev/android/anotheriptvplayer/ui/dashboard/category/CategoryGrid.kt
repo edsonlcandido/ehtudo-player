@@ -32,8 +32,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import dev.android.anotheriptvplayer.R
 
 /**
  * Generic adaptive grid for the live / vod / series category detail
@@ -107,7 +109,7 @@ fun CategorySearchField(
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = "Ara",
+    placeholder: String = stringResource(R.string.common_search),
     debounceMs: Long = 0L,
 ) {
     // `debounced` exposes a delayed version of `value` so callers can
@@ -132,7 +134,7 @@ fun CategorySearchField(
         trailingIcon = {
             if (value.isNotEmpty()) {
                 IconButton(onClick = { onValueChange("") }) {
-                    Icon(Icons.Default.Clear, contentDescription = "Temizle")
+                    Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.category_clear_cd))
                 }
             }
         },

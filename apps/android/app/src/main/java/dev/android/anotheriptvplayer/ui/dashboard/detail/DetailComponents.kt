@@ -46,10 +46,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import dev.android.anotheriptvplayer.R
 
 /**
  * Kotlin ports of the iOS detail-screen building blocks in
@@ -461,7 +463,7 @@ fun DetailPlotBlock(plot: String, modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            text = "Konu",
+            text = stringResource(R.string.detail_section_plot),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
         )
@@ -474,7 +476,7 @@ fun DetailPlotBlock(plot: String, modifier: Modifier = Modifier) {
         )
         AnimatedVisibility(visible = canExpand) {
             Text(
-                text = if (expanded) "Daha az" else "Daha fazla",
+                text = if (expanded) stringResource(R.string.detail_show_less) else stringResource(R.string.detail_show_more),
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,

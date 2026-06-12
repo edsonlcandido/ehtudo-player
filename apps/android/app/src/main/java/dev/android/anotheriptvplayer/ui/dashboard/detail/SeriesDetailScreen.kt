@@ -44,10 +44,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.android.anotheriptvplayer.R
 import dev.android.anotheriptvplayer.data.FavoriteRepository
 import dev.android.anotheriptvplayer.data.local.EpisodeEntity
 import dev.android.anotheriptvplayer.data.local.SeasonEntity
@@ -151,7 +153,7 @@ fun SeriesDetailScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
@@ -167,7 +169,7 @@ fun SeriesDetailScreen(
                     }) {
                         Icon(
                             imageVector = if (isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
-                            contentDescription = if (isFavorite) androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.detail_favorite_remove) else androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.detail_favorite_add),
+                            contentDescription = if (isFavorite) stringResource(R.string.detail_favorite_remove) else stringResource(R.string.detail_favorite_add),
                             tint = if (isFavorite) Color(0xFFFFC107) else MaterialTheme.colorScheme.onSurface,
                         )
                     }
@@ -180,8 +182,8 @@ fun SeriesDetailScreen(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
     ) { _ ->
         when {
-            series == null && fetchError != null -> ErrorState(message = fetchError ?: "Bilinmeyen hata")
-            series == null -> LoadingState(message = androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.detail_loading_series))
+            series == null && fetchError != null -> ErrorState(message = fetchError ?: stringResource(R.string.settings_unknown_error))
+            series == null -> LoadingState(message = stringResource(R.string.detail_loading_series))
             else -> {
                 val pl = playlist
                 SeriesDetailContent(
@@ -204,7 +206,7 @@ fun SeriesDetailScreen(
                         runCatching {
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(trailerUrl)))
                         }.onFailure {
-                            Toast.makeText(context, context.getString(dev.android.anotheriptvplayer.R.string.detail_trailer_failed), Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.detail_trailer_failed), Toast.LENGTH_SHORT).show()
                         }
                     },
                 )
@@ -253,10 +255,10 @@ private fun SeriesDetailContent(
         }
 
         DetailActionBar(
-            primaryTitle = androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.detail_watch),
+            primaryTitle = stringResource(R.string.detail_watch),
             onPrimary = onWatchFirst,
             primaryIcon = Icons.Default.PlayArrow,
-            trailerTitle = series.youtubeTrailer.normaliseTrailer()?.let { "Fragman" },
+            trailerTitle = series.youtubeTrailer.normaliseTrailer()?.let { stringResource(R.string.detail_trailer) },
             onTrailer = series.youtubeTrailer.normaliseTrailer()?.let { url -> { onTrailer(url) } },
         )
 
@@ -267,12 +269,12 @@ private fun SeriesDetailContent(
 
         val director = series.director?.trim().orEmpty()
         if (director.isNotEmpty()) {
-            DetailInfoTextBlock(label = androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.detail_director), value = director)
+            DetailInfoTextBlock(label = stringResource(R.string.detail_director), value = director)
         }
 
         val cast = series.cast?.trim().orEmpty()
         if (cast.isNotEmpty()) {
-            DetailInfoTextBlock(label = "Oyuncular", value = cast, maxLines = 3)
+            DetailInfoTextBlock(label = stringResource(R.string.detail_section_cast), value = cast, maxLines = 3)
         }
 
         // Seasons section.
@@ -288,7 +290,7 @@ private fun SeriesDetailContent(
 
         if (playlist == null) {
             Text(
-                text = androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.detail_loading_playlist),
+                text = stringResource(R.string.detail_loading_playlist),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp),
@@ -309,11 +311,11 @@ private fun SeasonsSection(
 ) {
     if (seasons.isEmpty()) {
         val message = if (series.seasonsLoaded) {
-            androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.detail_no_seasons)
+            stringResource(R.string.detail_no_seasons)
         } else if (seasonsLoading) {
-            androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.detail_seasons_loading)
+            stringResource(R.string.detail_seasons_loading)
         } else {
-            androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.detail_seasons_failed)
+            stringResource(R.string.detail_seasons_failed)
         }
         Text(
             text = message,
@@ -334,7 +336,7 @@ private fun SeasonsSection(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "Sezonlar",
+                text = stringResource(R.string.detail_seasons),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f),
@@ -342,7 +344,7 @@ private fun SeasonsSection(
             val selected = seasons.firstOrNull { it.id == selectedSeasonId }
             selected?.episodeCount?.let { count ->
                 Text(
-                    text = androidx.compose.ui.res.stringResource(dev.android.anotheriptvplayer.R.string.detail_episode_count_format, count),
+                    text = stringResource(R.string.detail_episode_count_format, count),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
