@@ -1,12 +1,15 @@
 package app.ehtudo.iptv.ui.settings
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,15 +17,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -33,10 +40,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -47,9 +56,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.ehtudo.iptv.R
@@ -57,6 +74,7 @@ import app.ehtudo.iptv.data.PlaylistContentStore
 import app.ehtudo.iptv.model.Playlist
 import app.ehtudo.iptv.networking.XtreamApiClient
 import app.ehtudo.iptv.networking.XtreamAuthResponse
+import app.ehtudo.iptv.ui.LocalDeviceIdProvider
 import app.ehtudo.iptv.ui.LocalPlaylistContentStore
 import app.ehtudo.iptv.ui.LocalPlaylistRepository
 import kotlinx.coroutines.launch
@@ -67,19 +85,16 @@ import java.time.temporal.ChronoUnit
 
 /**
  * Settings tab body — Kotlin port of iOS `PlaylistSettingsView`, scoped to
- * what the Android app already has wired:
- *  - Playlist info (read-only, password reveal toggle)
- *  - Subscription details (live `verify()` call)
- *  - Catalog row counts
- *  - Server timezone / message
- *  - Adult-content filter toggle (saves + re-syncs)
- *  - About / GitHub link
+ * what the Android app already has wired. For the Eh!Iptv single-tenant
+ * build the playlist is auto-created with a fixed server URL, so the only
+ * user-editable bits are the credentials. The card layout keeps the
+ * original structure (sync, subscription, stats, content, player,
+ * library, about) but the "Playlist Info" card is replaced with editable
+ * credentials + a device id block, and the legacy server-timezone card
+ * is dropped.
  *
  * Designed to render inside the dashboard's HorizontalPager — therefore
  * has no top bar / Scaffold of its own; padding is owned by the caller.
- *
- * Downloads, watch-history clear, language picker, and player settings are
- * omitted because the underlying features haven't landed on Android yet.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,8 +107,13 @@ fun PlaylistSettingsBody(
 ) {
     val playlistRepository = LocalPlaylistRepository.current
     val contentStore = LocalPlaylistContentStore.current
+    val deviceIdProvider = LocalDeviceIdProvider.current
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val deviceId = remember { deviceIdProvider.get() }
+    val deviceIdCopiedMessage = stringResource(R.string.config_device_id_copied)
 
     var playlist by remember(playlistId) { mutableStateOf<Playlist?>(null) }
     LaunchedEffect(playlistId) {
@@ -110,7 +130,33 @@ fun PlaylistSettingsBody(
     var syncMessage by remember { mutableStateOf<String?>(null) }
     var syncError by remember { mutableStateOf<String?>(null) }
 
-    var passwordRevealed by remember { mutableStateOf(false) }
+    // Editable credentials — the original iOS screen keeps them as
+    // read-only InfoRows, but for the Eh!Iptv build the user has to
+    // supply them, so they live in text fields that drive the Save
+    // button at the bottom of the credentials card.
+    var username by remember(playlistId) { mutableStateOf("") }
+    var password by remember(playlistId) { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var fieldsInitialized by remember(playlistId) { mutableStateOf(false) }
+    // Editable copy of the playlist row; updated after a successful save.
+    var savedUsername by remember(playlistId) { mutableStateOf("") }
+    var savedPassword by remember(playlistId) { mutableStateOf("") }
+    LaunchedEffect(playlist?.id) {
+        if (playlist != null && !fieldsInitialized) {
+            username = playlist!!.username
+            password = playlist!!.password
+            savedUsername = playlist!!.username
+            savedPassword = playlist!!.password
+            fieldsInitialized = true
+        }
+    }
+    val credentialsDirty = username.trim() != savedUsername.trim() ||
+        password != savedPassword
+    val credentialsValid = username.trim().isNotEmpty() && password.isNotEmpty()
+    val credentialsSavable = credentialsDirty && credentialsValid && !isSyncing
+
+    // Tracks a successful save so the user gets a snackbar confirmation.
+    var showSavedSnackbar by remember { mutableStateOf(false) }
 
     suspend fun reloadStats() {
         stats = contentStore.fetchStats(playlistId)
@@ -133,6 +179,47 @@ fun PlaylistSettingsBody(
         reloadAuth()
     }
 
+    fun saveCredentials() {
+        val current = playlist ?: return
+        if (!credentialsSavable) return
+        focusManager.clearFocus()
+        scope.launch {
+            isSyncing = true
+            syncError = null
+            val updated = current.copy(
+                username = username.trim(),
+                password = password,
+            )
+            try {
+                val response = runCatching { XtreamApiClient(updated).verify() }
+                    .getOrElse {
+                        syncError = it.message
+                        isSyncing = false
+                        return@launch
+                    }
+                if (response.userInfo?.auth != 1) {
+                    syncError = context.getString(R.string.config_auth_failed)
+                    isSyncing = false
+                    return@launch
+                }
+                playlistRepository.update(updated)
+                playlist = updated
+                savedUsername = updated.username
+                savedPassword = updated.password
+                contentStore.syncFromNetworkReplacingLocal(updated) { msg ->
+                    syncMessage = msg
+                }
+                reloadStats()
+                contentStore.reloadFromDatabaseIfActive(updated.id)
+                authResponse = response
+                showSavedSnackbar = true
+            } finally {
+                isSyncing = false
+                syncMessage = null
+            }
+        }
+    }
+
     if (playlist == null) {
         Box(
             modifier = modifier.fillMaxSize(),
@@ -142,13 +229,30 @@ fun PlaylistSettingsBody(
     }
     val pl = playlist!!
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = androidx.compose.ui.graphics.Color.Transparent,
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(innerPadding)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            // Hero logo — the first thing the user sees on the
+            // configuration tab.
+            Image(
+                painter = painterResource(R.drawable.ic_ehiptv_logo),
+                contentDescription = null,
+                modifier = Modifier
+                    .size(120.dp)
+                    .padding(top = 8.dp),
+            )
+
             // Sync section.
             SettingsCard {
                 ListItem(
@@ -197,39 +301,113 @@ fun PlaylistSettingsBody(
                 )
             }
 
-            // Playlist info section.
-            SettingsCard(title = stringResource(R.string.settings_card_playlist_info)) {
-                InfoRow(label = stringResource(R.string.settings_name), value = pl.name)
-                Divider()
-                InfoRow(label = stringResource(R.string.settings_server), value = pl.serverUrl)
-                Divider()
-                InfoRow(label = stringResource(R.string.settings_user), value = pl.username)
-                Divider()
+            // Editable credentials. The server URL is intentionally not
+            // exposed — the auto-created playlist already points at
+            // AppConfig.SERVER_URL.
+            SettingsCard(title = stringResource(R.string.config_section_credentials)) {
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it },
+                    label = { Text(stringResource(R.string.config_field_username)) },
+                    singleLine = true,
+                    enabled = !isSyncing,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(
+                        onNext = { focusManager.moveFocus(FocusDirection.Down) },
+                    ),
+                )
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text(stringResource(R.string.config_field_password)) },
+                    singleLine = true,
+                    enabled = !isSyncing,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    visualTransformation = if (passwordVisible) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Done,
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { saveCredentials() }),
+                    trailingIcon = {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(
+                                imageVector = if (passwordVisible) {
+                                    Icons.Default.VisibilityOff
+                                } else {
+                                    Icons.Default.Visibility
+                                },
+                                contentDescription = if (passwordVisible) {
+                                    stringResource(R.string.config_password_hide)
+                                } else {
+                                    stringResource(R.string.config_password_show)
+                                },
+                            )
+                        }
+                    },
+                )
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    Button(
+                        onClick = ::saveCredentials,
+                        enabled = credentialsSavable,
+                    ) {
+                        Text(stringResource(R.string.config_save))
+                    }
+                }
+            }
+
+            // Device ID — readable + copyable, for support / pairing.
+            SettingsCard(title = stringResource(R.string.config_device_id_title)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
-                        text = stringResource(R.string.settings_password),
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                        text = if (passwordRevealed) pl.password else "•".repeat(pl.password.length.coerceAtMost(20)),
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = stringResource(R.string.config_device_id_subtitle),
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(end = 8.dp),
                     )
-                    IconButton(onClick = { passwordRevealed = !passwordRevealed }) {
-                        Icon(
-                            imageVector = if (passwordRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = if (passwordRevealed) stringResource(R.string.common_hide) else stringResource(R.string.common_show),
-                            tint = MaterialTheme.colorScheme.primary,
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            text = deviceId,
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontFamily = FontFamily.Monospace,
+                            ),
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
+                        Spacer(Modifier.width(8.dp))
+                        IconButton(onClick = {
+                            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            cm.setPrimaryClip(ClipData.newPlainText("device_id", deviceId))
+                            scope.launch { snackbarHostState.showSnackbar(deviceIdCopiedMessage) }
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = stringResource(R.string.config_device_id_copy_cd),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                     }
                 }
             }
@@ -271,36 +449,6 @@ fun PlaylistSettingsBody(
                     InfoRow(label = stringResource(R.string.settings_vod_count), value = s.vodCount.toString())
                     Divider()
                     InfoRow(label = stringResource(R.string.settings_series_count), value = s.seriesCount.toString())
-                }
-            }
-
-            // Server info (timezone + message), only when present.
-            val server = authResponse?.serverInfo
-            val rawMessage = authResponse?.userInfo?.message?.trim().orEmpty()
-            if (server?.timezone?.isNotBlank() == true || rawMessage.isNotEmpty()) {
-                SettingsCard(title = stringResource(R.string.settings_card_server)) {
-                    server?.timezone?.takeIf { it.isNotBlank() }?.let {
-                        InfoRow(label = stringResource(R.string.settings_timezone), value = it)
-                    }
-                    if (rawMessage.isNotEmpty()) {
-                        if (server?.timezone?.isNotBlank() == true) Divider()
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.settings_message),
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            Text(
-                                text = rawMessage,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
                 }
             }
 
@@ -418,10 +566,11 @@ fun PlaylistSettingsBody(
                 InfoRow(label = stringResource(R.string.settings_version), value = appVersion)
                 Divider()
                 ListItem(
-                    headlineContent = { Text(stringResource(R.string.settings_github_label)) },
+                    headlineContent = { Text(stringResource(R.string.config_about_url_label)) },
                     supportingContent = {
                         Text(
-                            stringResource(R.string.settings_github_subtitle),
+                            text = stringResource(R.string.config_about_url),
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     },
@@ -434,7 +583,7 @@ fun PlaylistSettingsBody(
                             context.startActivity(
                                 Intent(
                                     Intent.ACTION_VIEW,
-                                    Uri.parse("https://github.com/bsogulcan/another-iptv-player"),
+                                    Uri.parse(context.getString(R.string.config_about_url)),
                                 ),
                             )
                         }
@@ -442,7 +591,17 @@ fun PlaylistSettingsBody(
                 )
             }
 
-        Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+
+    // Show the "saved" snackbar outside the Scaffold so it floats over
+    // the entire screen — including the dashboard content underneath.
+    LaunchedEffect(showSavedSnackbar) {
+        if (showSavedSnackbar) {
+            snackbarHostState.showSnackbar(context.getString(R.string.config_saved_ok))
+            showSavedSnackbar = false
+        }
     }
 }
 

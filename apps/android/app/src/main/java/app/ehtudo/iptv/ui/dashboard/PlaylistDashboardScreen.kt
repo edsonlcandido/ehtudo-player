@@ -15,7 +15,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.LiveTv
@@ -117,7 +116,7 @@ fun PlaylistDashboardScreen(
     val vodByCategory by store.vodStreamsByCategoryId.collectAsStateWithLifecycle()
     val seriesByCategory by store.seriesItemsByCategoryId.collectAsStateWithLifecycle()
 
-    val pagerState = rememberPagerState(initialPage = 0) { TAB_COUNT }
+    val pagerState = rememberPagerState(initialPage = 3) { TAB_COUNT }
     // Picker sheet — opened from the list icon on content tabs. Holds the
     // type ("live" / "vod" / "series") of the active tab so the sheet's
     // hide/unhide writes the right namespace.
@@ -135,11 +134,6 @@ fun PlaylistDashboardScreen(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
-                    }
                 },
                 actions = {
                     // Search is available on every tab.

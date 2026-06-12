@@ -308,4 +308,25 @@
 
     <!-- Search -->
     <string name="search_field_placeholder">Canal, filme ou série</string>
+
+    <!-- Página de configuração (Eh!Iptv) — substitui o fluxo antigo
+         "Adicionar Xtream / Adicionar M3U". O servidor é fixo; o usuário
+         só informa usuário/senha e lê o ID do dispositivo. -->
+    <string name="config_section_credentials">Credenciais</string>
+    <string name="config_field_username">Usuário</string>
+    <string name="config_field_password">Senha</string>
+    <string name="config_password_show">Mostrar senha</string>
+    <string name="config_password_hide">Ocultar senha</string>
+    <string name="config_save">Salvar</string>
+    <string name="config_saving">Re-sincronizando catálogo…</string>
+    <string name="config_saved_ok">Credenciais salvas.</string>
+    <string name="config_auth_failed">Usuário ou senha inválidos.</string>
+    <string name="config_save_failed">Não foi possível salvar as credenciais: %1$s</string>
+    <string name="config_unsaved_changes">Você tem alterações não salvas.</string>
+    <string name="config_device_id_title">ID do dispositivo</string>
+    <string name="config_device_id_subtitle">Seu identificador único — envie ao suporte para autorizar um novo dispositivo.</string>
+    <string name="config_device_id_copy_cd">Copiar ID do dispositivo</string>
+    <string name="config_device_id_copied">ID do dispositivo copiado.</string>
+    <string name="config_about_url">https://iptv.ehtudo.app/</string>
+    <string name="config_about_url_label">Abrir site</string>
 </resources>

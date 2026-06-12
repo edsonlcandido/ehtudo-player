@@ -17,9 +17,31 @@ class PlaylistRepository(private val dao: PlaylistDao) {
 
     suspend fun find(id: String): Playlist? = dao.findById(id)
 
+    suspend fun first(): Playlist? = dao.first()
+
     suspend fun add(playlist: Playlist) = dao.insert(playlist)
 
     suspend fun update(playlist: Playlist) = dao.update(playlist)
 
     suspend fun remove(id: String) = dao.deleteById(id)
+
+    /**
+     * Returns the first playlist in the table, or creates + returns a
+     * default one with the fixed server URL (see [AppConfig.SERVER_URL])
+     * if the table is empty. The Eh!Iptv build is single-tenant: the
+     * user is never offered a way to add playlists, so this is the
+     * single entry point that guarantees a row exists by the time the
+     * dashboard tries to read it.
+     */
+    suspend fun firstOrCreateDefault(): Playlist {
+        val existing = dao.first()
+        if (existing != null) return existing
+        val created = Playlist.create(
+            name = AppConfig.DEFAULT_PLAYLIST_NAME,
+            serverUrl = AppConfig.SERVER_URL,
+            kind = app.ehtudo.iptv.model.PlaylistKind.XTREAM,
+        )
+        dao.insert(created)
+        return created
+    }
 }

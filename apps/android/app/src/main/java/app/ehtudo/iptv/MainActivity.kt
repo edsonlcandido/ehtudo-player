@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import app.ehtudo.iptv.player.LocalPlayerActivityState
 import app.ehtudo.iptv.player.PlayerActivityState
 import app.ehtudo.iptv.ui.AppNavigation
+import app.ehtudo.iptv.ui.LocalDeviceIdProvider
 import app.ehtudo.iptv.ui.LocalFavoriteRepository
 import app.ehtudo.iptv.ui.LocalHiddenCategoryStore
 import app.ehtudo.iptv.ui.LocalLastPlaylistStore
@@ -57,6 +58,7 @@ class MainActivity : ComponentActivity() {
                     LocalLastPlaylistStore provides app.lastPlaylistStore,
                     LocalPlayerActivityState provides playerState,
                     LocalPlayerPreferences provides app.playerPreferences,
+                    LocalDeviceIdProvider provides app.deviceIdProvider,
                 ) {
                     Surface(modifier = Modifier.fillMaxSize()) {
                         AppNavigation()

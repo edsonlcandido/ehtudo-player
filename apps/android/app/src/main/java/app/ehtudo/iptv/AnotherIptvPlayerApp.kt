@@ -1,6 +1,8 @@
 package app.ehtudo.iptv
 
 import android.app.Application
+import app.ehtudo.iptv.data.AppConfig
+import app.ehtudo.iptv.data.DeviceIdProvider
 import app.ehtudo.iptv.data.DownloadManager
 import app.ehtudo.iptv.data.DownloadStorage
 import app.ehtudo.iptv.data.FavoriteRepository
@@ -107,6 +109,13 @@ class AnotherIptvPlayerApp : Application() {
      * app delegate.
      */
     val playerPreferences: PlayerPreferences by lazy { PlayerPreferences(this) }
+
+    /**
+     * Stable per-install device id. Provided as a `CompositionLocal` to the
+     * UI so the settings screen can show it (and let the user copy it to
+     * the clipboard for support).
+     */
+    val deviceIdProvider: DeviceIdProvider by lazy { DeviceIdProvider(this) }
 
     /**
      * Single-row live-stream lookup. Used by [ui.player.PlayerViewModel] to

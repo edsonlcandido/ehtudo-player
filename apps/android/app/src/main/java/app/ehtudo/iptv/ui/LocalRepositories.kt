@@ -1,6 +1,7 @@
 package app.ehtudo.iptv.ui
 
 import androidx.compose.runtime.staticCompositionLocalOf
+import app.ehtudo.iptv.data.DeviceIdProvider
 import app.ehtudo.iptv.data.FavoriteRepository
 import app.ehtudo.iptv.data.HiddenCategoryStore
 import app.ehtudo.iptv.data.LastPlaylistStore
@@ -58,4 +59,9 @@ val LocalLastPlaylistStore = staticCompositionLocalOf<LastPlaylistStore> {
 /** Player UX preferences (PiP, background play, long-press 2× speed). */
 val LocalPlayerPreferences = staticCompositionLocalOf<PlayerPreferences> {
     error("PlayerPreferences not provided — wrap the UI in CompositionLocalProvider.")
+}
+
+/** Stable per-device identifier (ANDROID_ID with a UUID fallback). */
+val LocalDeviceIdProvider = staticCompositionLocalOf<DeviceIdProvider> {
+    error("DeviceIdProvider not provided — wrap the UI in CompositionLocalProvider.")
 }

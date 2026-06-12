@@ -1,27 +1,24 @@
 package app.ehtudo.iptv.ui
 
 import android.net.Uri
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import app.ehtudo.iptv.ui.components.ModalSlideDurationMs
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import kotlinx.coroutines.launch
 import app.ehtudo.iptv.ui.dashboard.M3uDashboardScreen
 import app.ehtudo.iptv.ui.dashboard.PlaylistDashboardScreen
 import app.ehtudo.iptv.ui.downloads.DownloadsScreen
@@ -34,17 +31,20 @@ import app.ehtudo.iptv.ui.dashboard.category.SeriesCategoryDetailScreen
 import app.ehtudo.iptv.ui.dashboard.detail.MovieDetailScreen
 import app.ehtudo.iptv.ui.dashboard.detail.SeriesDetailScreen
 import app.ehtudo.iptv.ui.favorites.FavoritesScreen
-import app.ehtudo.iptv.ui.playlist.AddM3UPlaylistScreen
 import app.ehtudo.iptv.ui.player.PlayerScreen
 import app.ehtudo.iptv.ui.player.PlayerViewModel
-import app.ehtudo.iptv.ui.playlist.AddXtreamPlaylistScreen
-import app.ehtudo.iptv.ui.playlist.PlaylistScreen
 
-/** Route names for the app's navigation graph. */
+/**
+ * Route names for the app's navigation graph.
+ *
+ * Eh!Iptv is a single-tenant build: there's exactly one playlist, auto-
+ * created with a fixed server URL. The legacy "add Xtream / add M3U" routes
+ * have been removed and replaced with a transient bootstrap screen that
+ * either creates the default playlist on first launch or jumps straight
+ * to the dashboard.
+ */
 private object Routes {
-    const val PLAYLISTS = "playlists"
-    const val ADD_XTREAM = "add_xtream"
-    const val ADD_M3U = "add_m3u"
+    const val BOOTSTRAP = "bootstrap"
     const val DASHBOARD = "dashboard"
     const val MOVIE = "movie"
     const val SERIES = "series"
@@ -59,13 +59,6 @@ private object Routes {
     const val SEARCH = "search"
     const val HISTORY = "history"
     const val DOWNLOADS = "downloads"
-
-    /** Edit routes reuse the add screens with an optional playlist id. */
-    fun xtream(playlistId: String? = null) =
-        if (playlistId != null) "$ADD_XTREAM?playlistId=$playlistId" else ADD_XTREAM
-
-    fun m3u(playlistId: String? = null) =
-        if (playlistId != null) "$ADD_M3U?playlistId=$playlistId" else ADD_M3U
 
     fun dashboard(playlistId: String) = "$DASHBOARD/$playlistId"
 
@@ -114,52 +107,52 @@ private const val ARG_PLAYLIST_ID = "playlistId"
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
-    val lastPlaylistStore = LocalLastPlaylistStore.current
     val playlistRepository = LocalPlaylistRepository.current
-    val scope = rememberCoroutineScope()
+    val lastPlaylistStore = LocalLastPlaylistStore.current
 
-    // Mirrors iOS `hasAttemptedAutoLoad`: try once per process to resume the
-    // last opened playlist. If the saved id is missing from the DB, silently
-    // drop it so the next launch starts at the list rather than retrying.
-    var hasAttemptedAutoLoad by rememberSaveable { mutableStateOf(false) }
+    // One-shot per process. The bootstrap route observes `playlists` and:
+    //   1. waits for the first non-null emission
+    //   2. auto-creates the default playlist if the table is empty
+    //   3. navigates to the dashboard and pops itself off the stack
+    var hasBootstrapped by rememberSaveable { mutableStateOf(false) }
     val playlists by playlistRepository.observeAll().collectAsState(initial = null)
-    LaunchedEffect(playlists, hasAttemptedAutoLoad) {
+
+    // Visible transient state so the bootstrap screen can show a hint
+    // when the DB is taking longer than a single frame to respond.
+    val bootstrapState = remember { mutableStateOf<BootstrapState>(BootstrapState.Waiting) }
+
+    LaunchedEffect(playlists, hasBootstrapped) {
+        if (hasBootstrapped) return@LaunchedEffect
         val list = playlists ?: return@LaunchedEffect
-        if (hasAttemptedAutoLoad) return@LaunchedEffect
-        hasAttemptedAutoLoad = true
-        val savedId = lastPlaylistStore.read() ?: return@LaunchedEffect
-        val match = list.firstOrNull { it.id == savedId }
-        if (match == null) {
-            lastPlaylistStore.clear()
-            return@LaunchedEffect
+        hasBootstrapped = true
+
+        // Honor the "last opened" id only if it still exists in the DB.
+        // A dangling reference would otherwise leave the dashboard stuck
+        // on its own loading spinner forever.
+        val remembered = lastPlaylistStore.read()
+        val target = when {
+            remembered != null && list.any { it.id == remembered } -> list.first { it.id == remembered }
+            else -> {
+                if (remembered != null) lastPlaylistStore.clear()
+                list.firstOrNull() ?: run {
+                    bootstrapState.value = BootstrapState.Creating
+                    playlistRepository.firstOrCreateDefault()
+                }
+            }
         }
-        navController.navigate(Routes.dashboard(savedId)) {
-            popUpTo(Routes.PLAYLISTS) { inclusive = false }
+        lastPlaylistStore.write(target.id)
+        navController.navigate(Routes.dashboard(target.id)) {
+            popUpTo(Routes.BOOTSTRAP) { inclusive = true }
             launchSingleTop = true
         }
     }
 
-    // Short fade for every nav transition — keeps the NavHost crossfade brief
-    // so the modal slide-up driven by ModalSlideContainer is what the user sees.
     NavHost(
         navController = navController,
-        startDestination = Routes.PLAYLISTS,
-        enterTransition = { fadeIn(tween(120)) },
-        exitTransition = { fadeOut(tween(120)) },
-        popEnterTransition = { fadeIn(tween(120)) },
-        popExitTransition = { fadeOut(tween(120)) },
+        startDestination = Routes.BOOTSTRAP,
     ) {
-        composable(route = Routes.PLAYLISTS) {
-            PlaylistScreen(
-                onAddXtream = { navController.navigate(Routes.xtream()) },
-                onAddM3u = { navController.navigate(Routes.m3u()) },
-                onEditXtream = { id -> navController.navigate(Routes.xtream(id)) },
-                onEditM3u = { id -> navController.navigate(Routes.m3u(id)) },
-                onOpenPlaylist = { id ->
-                    lastPlaylistStore.write(id)
-                    navController.navigate(Routes.dashboard(id))
-                },
-            )
+        composable(route = Routes.BOOTSTRAP) {
+            BootstrapScreen(state = bootstrapState.value)
         }
 
         composable(
@@ -183,11 +176,10 @@ fun AppNavigation() {
                 resolvedKind = playlistRepository.find(id)?.kind ?: PlaylistKind.XTREAM
             }
 
-            val backWithCleanup: () -> Unit = {
-                // Matches iOS `M3UDashboardView { lastPlaylistId removed }`:
-                // explicit back to the list also clears the auto-load
-                // marker so the next launch goes to the list, not back here.
-                lastPlaylistStore.clear()
+            val backToSystem: () -> Unit = {
+                // In the single-tenant build there's nowhere to go "back"
+                // to. The dashboard is the only entry on the back stack
+                // and the BOOTSTRAP route has already been popped.
                 navController.popBackStack()
             }
 
@@ -195,7 +187,7 @@ fun AppNavigation() {
                 PlaylistKind.M3U -> {
                     M3uDashboardScreen(
                         playlistId = id,
-                        onBack = backWithCleanup,
+                        onBack = backToSystem,
                         onPlayChannel = { channelId, _, _ ->
                             navController.navigate(Routes.playerM3u(id, channelId))
                         },
@@ -204,7 +196,7 @@ fun AppNavigation() {
                 else -> {
                     PlaylistDashboardScreen(
                         playlistId = id,
-                        onBack = backWithCleanup,
+                        onBack = backToSystem,
                         onOpenMovie = { streamId ->
                             navController.navigate(Routes.movie(id, streamId))
                         },
@@ -472,9 +464,6 @@ fun AppNavigation() {
         }
 
 
-        // Add / edit screens behave like native full-screen modal dialogs. The
-        // slide-up is driven inside the screen by ModalSlideContainer — NavHost
-        // slide transitions mis-place touch targets, so they are avoided here.
         composable(
             route = "${Routes.SEARCH}/{$ARG_PLAYLIST_ID}",
             arguments = listOf(navArgument(ARG_PLAYLIST_ID) { type = NavType.StringType }),
@@ -514,59 +503,23 @@ fun AppNavigation() {
                 onBack = { navController.popBackStack() },
             )
         }
+    }
+}
 
-        composable(
-            route = "${Routes.ADD_XTREAM}?playlistId={$ARG_PLAYLIST_ID}",
-            arguments = listOf(
-                navArgument(ARG_PLAYLIST_ID) {
-                    type = NavType.StringType
-                    nullable = true
-                    defaultValue = null
-                },
-            ),
-            popExitTransition = {
-                slideOutVertically(tween(ModalSlideDurationMs, easing = FastOutSlowInEasing)) { it }
-            },
-        ) { backStackEntry ->
-            AddXtreamPlaylistScreen(
-                onCancel = { navController.popBackStack() },
-                onSaved = { playlistId ->
-                    // Jump straight to the dashboard so the user can see the
-                    // freshly-synced catalog — the modal slides away under
-                    // the dashboard transition. The playlists list stays in
-                    // the back stack so pressing Back returns there.
-                    navController.navigate(Routes.dashboard(playlistId)) {
-                        popUpTo(Routes.PLAYLISTS) { inclusive = false }
-                        launchSingleTop = true
-                    }
-                },
-                editingPlaylistId = backStackEntry.arguments?.getString(ARG_PLAYLIST_ID),
-            )
-        }
+/** What the [BootstrapScreen] is currently doing — drives the label. */
+private enum class BootstrapState { Waiting, Creating }
 
-        composable(
-            route = "${Routes.ADD_M3U}?playlistId={$ARG_PLAYLIST_ID}",
-            arguments = listOf(
-                navArgument(ARG_PLAYLIST_ID) {
-                    type = NavType.StringType
-                    nullable = true
-                    defaultValue = null
-                },
-            ),
-            popExitTransition = {
-                slideOutVertically(tween(ModalSlideDurationMs, easing = FastOutSlowInEasing)) { it }
-            },
-        ) { backStackEntry ->
-            AddM3UPlaylistScreen(
-                onCancel = { navController.popBackStack() },
-                onSaved = { playlistId ->
-                    navController.navigate(Routes.dashboard(playlistId)) {
-                        popUpTo(Routes.PLAYLISTS) { inclusive = false }
-                        launchSingleTop = true
-                    }
-                },
-                editingPlaylistId = backStackEntry.arguments?.getString(ARG_PLAYLIST_ID),
-            )
+/** Splash shown while the bootstrap launches the default playlist. */
+@Composable
+private fun BootstrapScreen(state: BootstrapState) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        androidx.compose.foundation.layout.Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            CircularProgressIndicator()
         }
     }
 }

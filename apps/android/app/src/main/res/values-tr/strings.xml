@@ -225,4 +225,25 @@
     <string name="mpv_error_nothing_to_play">Oynatılabilir bir akış bulunamadı.</string>
     <string name="mpv_error_av_init">Ses/görüntü çıkışı başlatılamadı.</string>
     <string name="mpv_error_check_network">Oynatma başarısız. Ağ bağlantınızı kontrol edin.</string>
+
+    <!-- Yapılandırma sayfası (Eh!Iptv) — eski "Xtream / M3U ekle"
+         akışının yerini alır. Sunucu sabittir; kullanıcı yalnızca
+         kimlik bilgilerini girer ve cihaz kimliğini okur. -->
+    <string name="config_section_credentials">Kimlik Bilgileri</string>
+    <string name="config_field_username">Kullanıcı adı</string>
+    <string name="config_field_password">Şifre</string>
+    <string name="config_password_show">Şifreyi göster</string>
+    <string name="config_password_hide">Şifreyi gizle</string>
+    <string name="config_save">Kaydet</string>
+    <string name="config_saving">Katalog yeniden senkronize ediliyor…</string>
+    <string name="config_saved_ok">Kimlik bilgileri kaydedildi.</string>
+    <string name="config_auth_failed">Geçersiz kullanıcı adı veya şifre.</string>
+    <string name="config_save_failed">Kimlik bilgileri kaydedilemedi: %1$s</string>
+    <string name="config_unsaved_changes">Kaydedilmemiş değişiklikleriniz var.</string>
+    <string name="config_device_id_title">Cihaz Kimliği</string>
+    <string name="config_device_id_subtitle">Benzersiz tanımlayıcınız — yeni bir cihazı yetkilendirmek için destek ile paylaşın.</string>
+    <string name="config_device_id_copy_cd">Cihaz Kimliğini Kopyala</string>
+    <string name="config_device_id_copied">Cihaz kimliği panoya kopyalandı.</string>
+    <string name="config_about_url">https://iptv.ehtudo.app/</string>
+    <string name="config_about_url_label">Web sitesini aç</string>
 </resources>
