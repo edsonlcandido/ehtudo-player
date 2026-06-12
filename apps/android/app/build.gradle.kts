@@ -7,11 +7,11 @@ plugins {
 }
 
 android {
-    namespace = "dev.android.anotheriptvplayer"
+    namespace = "app.ehtudo.iptv"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "dev.android.anotheriptvplayer"
+        applicationId = "app.ehtudo.iptv"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

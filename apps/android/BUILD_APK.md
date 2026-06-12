@@ -10,7 +10,7 @@ legado em `apps/flutter/` está deprecated e tem um processo separado.
 
 | Item | Valor |
 | --- | --- |
-| `applicationId` | `dev.android.anotheriptvplayer` |
+| `applicationId` | `app.ehtudo.iptv` |
 | `versionCode` / `versionName` | `1` / `1.0` (definidos em `apps/android/app/build.gradle.kts`) |
 | `compileSdk` / `targetSdk` | `36` |
 | `minSdk` | `26` (Android 8.0) |
@@ -269,13 +269,13 @@ Com um device/emulador conectado (`adb devices` deve listar algo):
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 # ou
 adb install -r app-release.apk    # se você assinou
-adb shell am start -n dev.android.anotheriptvplayer/.MainActivity
+adb shell am start -n app.ehtudo.iptv/.MainActivity
 ```
 
 Logs do app:
 
 ```bash
-adb logcat --pid="$(adb shell pidof -s dev.android.anotheriptvplayer)"
+adb logcat --pid="$(adb shell pidof -s app.ehtudo.iptv)"
 ```
 
 ---

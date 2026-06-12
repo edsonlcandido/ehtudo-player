@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Another IPTV Player</string>
+    <string name="app_name">Eh!Iptv</string>
 
     <!-- Common controls -->
     <string name="common_back">Back</string>
@@ -24,6 +24,7 @@
     <string name="screen_movies">Movies</string>
     <string name="screen_series">Series</string>
     <string name="screen_settings">Settings</string>
+    <string name="nav_settings_short">Config</string>
     <string name="screen_search">Search</string>
     <string name="screen_downloads">Downloads</string>
     <string name="screen_watch_history">Watch History</string>
