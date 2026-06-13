@@ -212,6 +212,7 @@ fun PlaylistSettingsBody(
                 reloadStats()
                 contentStore.reloadFromDatabaseIfActive(updated.id)
                 authResponse = response
+                authError = null
                 showSavedSnackbar = true
             } finally {
                 isSyncing = false

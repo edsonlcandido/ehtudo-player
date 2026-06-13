@@ -15,6 +15,8 @@ class PlaylistRepository(private val dao: PlaylistDao) {
 
     fun observeAll(): Flow<List<Playlist>> = dao.observeAll()
 
+    fun observeById(id: String): Flow<Playlist?> = dao.observeById(id)
+
     suspend fun find(id: String): Playlist? = dao.findById(id)
 
     suspend fun first(): Playlist? = dao.first()

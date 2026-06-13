@@ -26,6 +26,9 @@ interface PlaylistDao {
     @Query("SELECT * FROM playlist WHERE id = :id LIMIT 1")
     suspend fun findById(id: String): Playlist?
 
+    @Query("SELECT * FROM playlist WHERE id = :id LIMIT 1")
+    fun observeById(id: String): Flow<Playlist?>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(playlist: Playlist)
 

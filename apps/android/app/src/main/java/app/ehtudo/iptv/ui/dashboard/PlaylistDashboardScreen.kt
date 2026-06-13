@@ -99,10 +99,21 @@ fun PlaylistDashboardScreen(
     val store = LocalPlaylistContentStore.current
     val scope = rememberCoroutineScope()
 
-    var playlist by remember(playlistId) { mutableStateOf<Playlist?>(null) }
-    LaunchedEffect(playlistId) {
-        playlist = repository.find(playlistId)
-        playlist?.let { store.loadPlaylistSuspending(it) }
+    // Observe the playlist row reactively so credential updates from the
+    // Settings tab are reflected here immediately without a restart.
+    val playlist by repository.observeById(playlistId)
+        .collectAsStateWithLifecycle(initialValue = null)
+
+    // Trigger a catalog load when the playlist is first available and when
+    // credentials transition from blank to non-blank (first-time setup).
+    val hadCredentials = remember { mutableStateOf(false) }
+    LaunchedEffect(playlist) {
+        val pl = playlist ?: return@LaunchedEffect
+        val nowHasCredentials = pl.username.isNotBlank() && pl.password.isNotBlank()
+        if (nowHasCredentials && !hadCredentials.value) {
+            hadCredentials.value = true
+        }
+        store.loadPlaylistSuspending(pl)
     }
 
     val isLoading by store.isLoading.collectAsStateWithLifecycle()
