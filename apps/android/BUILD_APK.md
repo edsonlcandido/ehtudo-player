@@ -412,3 +412,244 @@ sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools" "ndk;26.
 # Localizar APKs
 ls -lh apps/android/app/build/outputs/apk/{release,debug}/*.apk
 ```
+
+---
+
+## 11. Pipeline rápido do dev-container (Java 21 + debug keystore)
+
+Esta seção descreve o fluxo usado em Codespaces / dev-containers Ubuntu
+24.04 para buildar o APK do `app.ehtudo.iptv` com o **JDK 21 do
+SDKMAN** (em vez do JDK 17) e assiná-lo com a **debug keystore**
+(`~/.android/debug.keystore`, alias `androiddebugkey`, senha `android`),
+servindo o resultado via `python3 -m http.server` na porta 8000.
+
+> Esse atalho existe porque o app não tem `signingConfigs` configurado
+> em `apps/android/app/build.gradle.kts`. O `assembleRelease` produz
+> um APK **não-assinado**; para instalar em device real é obrigatório
+> passar pelo `zipalign` + `apksigner` antes.
+
+### 11.1 Build (Java 21, sem daemon)
+
+```bash
+cd /workspaces/ehtudo-player/apps/android
+env -i HOME="$HOME" PATH="/usr/local/sdkman/candidates/java/21.0.10-ms/bin:$PATH" \
+  JAVA_HOME="/usr/local/sdkman/candidates/java/21.0.10-ms" \
+  ./gradlew :app:assembleRelease --no-daemon
+```
+
+> O `env -i` isola variáveis herdadas do shell (em especial
+> `ANDROID_HOME`/`ANDROID_SDK_ROOT` apontando para outro SDK) e força
+> o Gradle a reler o `local.properties` do diretório atual. Sem isso o
+> build pode falhar com `SDK location not found` apontando para um
+> caminho antigo.
+
+Saída esperada (alguns minutos na primeira vez, segundos em build
+incremental):
+
+```
+apps/android/app/build/outputs/apk/release/app-release-unsigned.apk
+```
+
+### 11.2 Zipalign
+
+O `app-release-unsigned.apk` precisa ser zipaligned antes de assinar
+para que o `apksigner` aceite a entrada:
+
+```bash
+SDK=/home/codespace/android-sdk
+
+$SDK/build-tools/36.0.0/zipalign -v -p 4 \
+  /workspaces/ehtudo-player/apps/android/app/build/outputs/apk/release/app-release-unsigned.apk \
+  /workspaces/ehtudo-player/apps/android/app/build/outputs/apk/release/app-release-aligned.apk
+```
+
+- `-p 4` alinha páginas nativas (`.so`) em 4 bytes.
+- `-v` mostra cada arquivo processado.
+
+### 11.3 Assinar com a debug keystore
+
+```bash
+SDK=/home/codespace/android-sdk
+
+$SDK/build-tools/36.0.0/apksigner sign \
+  --ks /home/codespace/.android/debug.keystore \
+  --ks-key-alias androiddebugkey \
+  --ks-pass pass:android \
+  --key-pass pass:android \
+  --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+  --out /workspaces/ehtudo-player/apps/android/app/build/outputs/apk/release/app-release-signed.apk \
+  /workspaces/ehtudo-player/apps/android/app/build/outputs/apk/release/app-release-aligned.apk
+```
+
+> A debug keystore é gerada automaticamente pelo Android Studio / Gradle
+> no primeiro build debug e fica em `~/.android/debug.keystore`. Senhas
+> sempre `android`. Serve para **install sideload** (download direto),
+> mas **não serve para Play Store** — para publicar, gere uma keystore
+> dedicada e use a Seção [6](#6-assinatura-opcional).
+
+### 11.4 Verificar assinatura
+
+```bash
+SDK=/home/codespace/android-sdk
+
+$SDK/build-tools/36.0.0/apksigner verify --verbose \
+  /workspaces/ehtudo-player/apps/android/app/build/outputs/apk/release/app-release-signed.apk
+
+sha256sum /workspaces/ehtudo-player/apps/android/app/build/outputs/apk/release/app-release-signed.apk
+```
+
+Saída esperada:
+
+```
+Verifies
+Verified using v1 scheme (JAR signing): true
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): true
+```
+
+E o `sha256sum` muda a cada build (conteúdo do APK muda), mas o
+`apksigner verify` sempre deve terminar com `Verifies`.
+
+### 11.5 Servir via HTTP (python3)
+
+Para baixar o APK do Codespace/dev-container via URL pública, suba um
+servidor HTTP simples servindo o diretório de saída:
+
+```bash
+pkill -f "http.server 8000" 2>/dev/null || true
+setsid python3 -m http.server 8000 --bind 0.0.0.0 \
+  --directory /workspaces/ehtudo-player/apps/android/app/build/outputs/apk/release/ \
+  < /dev/null > /tmp/httpd.log 2>&1 & disown
+```
+
+Verificar que está respondendo:
+
+```bash
+curl -sI http://127.0.0.1:8000/app-release-signed.apk
+# esperado: HTTP/1.0 200 OK, Content-Length: ~55M
+```
+
+A URL pública do Codespace (formato `https://<host>-<port>.app.github.dev/`)
+é construída a partir do **hostname do codespace** + **porta pública**.
+Exemplo:
+
+```
+https://super-duper-enigma-x9qpvpxq755cgv-8000.app.github.dev/app-release-signed.apk
+```
+
+> **Importante:** a porta 8000 precisa estar marcada como **Public** (e
+> não **Private**) na aba **Ports** do VS Code, senão o proxy do
+> GitHub dev-container bloqueia o acesso externo. Para conferir:
+> aba **Ports** → porta `8000` → botão direito → **Change Port
+> Visibility** → **Public**.
+
+Logs do servidor:
+
+```bash
+tail -f /tmp/httpd.log
+```
+
+### 11.6 Build + sign + serve em um único script
+
+Para iterar rapidamente, salve isto como `apps/android/release.sh`:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT=/workspaces/ehtudo-player
+SDK=/home/codespace/android-sdk
+
+cd "$ROOT/apps/android"
+env -i HOME="$HOME" \
+  PATH="/usr/local/sdkman/candidates/java/21.0.10-ms/bin:$PATH" \
+  JAVA_HOME="/usr/local/sdkman/candidates/java/21.0.10-ms" \
+  ./gradlew :app:assembleRelease --no-daemon
+
+OUT="$ROOT/apps/android/app/build/outputs/apk/release"
+
+$SDK/build-tools/36.0.0/zipalign -v -p 4 \
+  "$OUT/app-release-unsigned.apk" "$OUT/app-release-aligned.apk"
+
+$SDK/build-tools/36.0.0/apksigner sign \
+  --ks /home/codespace/.android/debug.keystore \
+  --ks-key-alias androiddebugkey \
+  --ks-pass pass:android --key-pass pass:android \
+  --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+  --out "$OUT/app-release-signed.apk" \
+  "$OUT/app-release-aligned.apk"
+
+$SDK/build-tools/36.0.0/apksigner verify --verbose "$OUT/app-release-signed.apk"
+sha256sum "$OUT/app-release-signed.apk"
+
+pkill -f "http.server 8000" 2>/dev/null || true
+setsid python3 -m http.server 8000 --bind 0.0.0.0 \
+  --directory "$OUT" < /dev/null > /tmp/httpd.log 2>&1 & disown
+
+echo
+echo "APK pronto em: $OUT/app-release-signed.apk"
+echo "URL:           https://<codespace-host>-8000.app.github.dev/app-release-signed.apk"
+```
+
+Uso:
+
+```bash
+chmod +x apps/android/release.sh
+apps/android/release.sh
+```
+
+### 11.7 Strings/locales
+
+Ao adicionar uma string nova (ex: a `empty_configure_credentials_prompt`
+introduzida no fix de "fresh install"), ela precisa ser replicada nos
+**três** arquivos de strings:
+
+```bash
+# en  → apps/android/app/src/main/res/values/strings.xml
+# pt   → apps/android/app/src/main/res/values-pt-rBR/strings.xml
+# tr   → apps/android/app/src/main/res/values-tr/strings.xml
+```
+
+Padrão da entrada (mantenha o `name` idêntico e traduza o conteúdo):
+
+```xml
+<string name="empty_configure_credentials_prompt">Configure your username and password in the Settings tab to start watching.</string>
+```
+
+```xml
+<string name="empty_configure_credentials_prompt">Configure seu usuário e senha na aba Configurações para começar a assistir.</string>
+```
+
+```xml
+<string name="empty_configure_credentials_prompt">İzlemeye başlamak için Ayarlar sekmesinden kullanıcı adınızı ve şifrenizi yapılandırın.</string>
+```
+
+Verificar depois do build (deve listar o nome novo em todos os
+locales):
+
+```bash
+$SDK/build-tools/36.0.0/aapt2 dump resources \
+  $ROOT/apps/android/app/build/outputs/apk/release/app-release-unsigned.apk \
+  | grep -A1 empty_configure_credentials_prompt
+```
+
+### 11.8 Comportamento "fresh install"
+
+Pós-fix de fresh install (commit da sessão `ses_142f`), o app deve:
+
+| Cenário | O que acontece |
+| --- | --- |
+| **Fresh install** (sem user/pass) | App abre direto na aba **Config** (pager `initialPage=3`), sem spinner, sem tela de erro. Tabs Live/Filmes/Séries mostram `"Configure seu usuário e senha na aba Configurações para começar a assistir."` |
+| **Atualização** (DB já tem user/pass válidos) | Dashboard carrega catálogo normalmente; `initialPage=3` continua abrindo na aba Config. |
+| **Atualização** (DB com playlist de user/pass vazios) | Tratado como fresh install — abre na aba Config. |
+
+A correção tem 3 partes, todas já aplicadas nos fontes:
+
+1. `data/PlaylistContentStore.kt` — early-return em
+   `loadPlaylistSuspending` quando `username.isBlank() || password.isBlank()`
+   (evita chamada de rede com parâmetros faltando).
+2. `ui/dashboard/PlaylistDashboardScreen.kt` — novo branch
+   `!hasCredentials -> DashboardPager(...)` no `when` body, e o
+   `DashboardPager` extraído em composable privado para evitar
+   duplicar ~60 linhas.
+3. `res/values{,-pt-rBR,-tr}/strings.xml` — string
+   `empty_configure_credentials_prompt` em 3 idiomas.
