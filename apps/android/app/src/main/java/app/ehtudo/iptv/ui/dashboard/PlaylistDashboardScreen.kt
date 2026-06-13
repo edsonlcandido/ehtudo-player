@@ -129,6 +129,21 @@ fun PlaylistDashboardScreen(
 
     val pagerState = rememberPagerState(initialPage = 3) { TAB_COUNT }
 
+    // On the very first composition where playlist becomes non-null, navigate
+    // to the Live tab (page 0) if credentials are already set. This covers
+    // returning users who already have user/pass configured. Fresh installs
+    // (empty creds) stay on page 3 (Settings) so the user can fill them in.
+    val initialNavigationDone = remember { mutableStateOf(false) }
+    LaunchedEffect(playlist) {
+        val pl = playlist ?: return@LaunchedEffect
+        if (!initialNavigationDone.value) {
+            initialNavigationDone.value = true
+            if (pl.username.isNotBlank() && pl.password.isNotBlank()) {
+                pagerState.scrollToPage(0)
+            }
+        }
+    }
+
     // The Eh!Iptv build auto-creates a default playlist with empty
     // credentials on first launch. Until the user fills them in we
     // don't try to load the catalog (the network call would fail), so

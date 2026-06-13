@@ -171,7 +171,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get subtitle_track => 'Faixa de Legendas';
 
   @override
-  String get settings => 'Configurações';
+  String get settings => 'Config';
 
   @override
   String get general_settings => 'Configurações Gerais';
