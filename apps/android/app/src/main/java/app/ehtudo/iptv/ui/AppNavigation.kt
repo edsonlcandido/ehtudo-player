@@ -1,24 +1,35 @@
 package app.ehtudo.iptv.ui
 
 import android.net.Uri
+import android.util.Log
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import app.ehtudo.iptv.R
 import app.ehtudo.iptv.ui.dashboard.M3uDashboardScreen
 import app.ehtudo.iptv.ui.dashboard.PlaylistDashboardScreen
 import app.ehtudo.iptv.ui.downloads.DownloadsScreen
@@ -33,6 +44,9 @@ import app.ehtudo.iptv.ui.dashboard.detail.SeriesDetailScreen
 import app.ehtudo.iptv.ui.favorites.FavoritesScreen
 import app.ehtudo.iptv.ui.player.PlayerScreen
 import app.ehtudo.iptv.ui.player.PlayerViewModel
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
 /**
  * Route names for the app's navigation graph.
@@ -109,36 +123,37 @@ fun AppNavigation() {
     val navController = rememberNavController()
     val playlistRepository = LocalPlaylistRepository.current
     val lastPlaylistStore = LocalLastPlaylistStore.current
+    val scope = rememberCoroutineScope()
 
-    // One-shot per process. The bootstrap route observes `playlists` and:
-    //   1. waits for the first non-null emission
-    //   2. auto-creates the default playlist if the table is empty
-    //   3. navigates to the dashboard and pops itself off the stack
-    var hasBootstrapped by rememberSaveable { mutableStateOf(false) }
-    val playlists by playlistRepository.observeAll().collectAsState(initial = null)
+    // The bootstrap is a one-shot per process: it asks the repository for
+    // the default playlist (auto-creates one on a fresh install), persists
+    // its id as "last opened", and navigates to the dashboard. We guard the
+    // whole thing with an 8s timeout and an error state so a slow or stuck
+    // database (corrupt SQLite, Room initialization hang, etc.) can no
+    // longer leave the user on a permanent spinner.
+    //
+    // Earlier revisions tried to drive this from the `playlists` Flow with
+    // `hasBootstrapped` as a key, but Room re-emits immediately after
+    // `firstOrCreateDefault` inserts the new row — that flips the key and
+    // cancels the in-flight coroutine, so the navigation never happens.
+    // Using `LaunchedEffect(Unit)` + a one-shot suspend call sidesteps the
+    // race entirely.
+    var bootstrapError by remember { mutableStateOf<String?>(null) }
 
-    // Visible transient state so the bootstrap screen can show a hint
-    // when the DB is taking longer than a single frame to respond.
-    val bootstrapState = remember { mutableStateOf<BootstrapState>(BootstrapState.Waiting) }
-
-    LaunchedEffect(playlists, hasBootstrapped) {
-        if (hasBootstrapped) return@LaunchedEffect
-        val list = playlists ?: return@LaunchedEffect
-        hasBootstrapped = true
-
-        // Honor the "last opened" id only if it still exists in the DB.
-        // A dangling reference would otherwise leave the dashboard stuck
-        // on its own loading spinner forever.
-        val remembered = lastPlaylistStore.read()
-        val target = when {
-            remembered != null && list.any { it.id == remembered } -> list.first { it.id == remembered }
-            else -> {
-                if (remembered != null) lastPlaylistStore.clear()
-                list.firstOrNull() ?: run {
-                    bootstrapState.value = BootstrapState.Creating
-                    playlistRepository.firstOrCreateDefault()
-                }
+    suspend fun runBootstrap() {
+        bootstrapError = null
+        val target = try {
+            withTimeout(BOOTSTRAP_TIMEOUT_MS) {
+                playlistRepository.firstOrCreateDefault()
             }
+        } catch (e: TimeoutCancellationException) {
+            bootstrapError = "BOOTSTRAP_TIMEOUT"
+            Log.w(TAG, "Bootstrap timed out after ${BOOTSTRAP_TIMEOUT_MS}ms")
+            return
+        } catch (e: Throwable) {
+            bootstrapError = e.message ?: e.javaClass.simpleName
+            Log.e(TAG, "Bootstrap failed", e)
+            return
         }
         lastPlaylistStore.write(target.id)
         navController.navigate(Routes.dashboard(target.id)) {
@@ -147,12 +162,19 @@ fun AppNavigation() {
         }
     }
 
+    LaunchedEffect(Unit) {
+        runBootstrap()
+    }
+
     NavHost(
         navController = navController,
         startDestination = Routes.BOOTSTRAP,
     ) {
         composable(route = Routes.BOOTSTRAP) {
-            BootstrapScreen(state = bootstrapState.value)
+            BootstrapScreen(
+                error = bootstrapError,
+                onRetry = { scope.launch { runBootstrap() } },
+            )
         }
 
         composable(
@@ -506,20 +528,56 @@ fun AppNavigation() {
     }
 }
 
-/** What the [BootstrapScreen] is currently doing — drives the label. */
-private enum class BootstrapState { Waiting, Creating }
+/** How long we wait for `firstOrCreateDefault` to return before giving up
+ *  and showing the user a "tap to retry" error state. Catches a stuck
+ *  database (corrupt SQLite file, Room initialization hang, etc.) — the
+ *  8s budget is generous on purpose since the operation is normally a
+ *  single Room insert that completes in a few milliseconds. */
+private const val BOOTSTRAP_TIMEOUT_MS = 8_000L
 
-/** Splash shown while the bootstrap launches the default playlist. */
+private const val TAG = "AppNavigation"
+
+/** Splash shown while the bootstrap launches the default playlist.
+ *
+ *  In the happy path this is a single CircularProgressIndicator that
+ *  disappears within a few frames once navigation completes. When the
+ *  bootstrap times out or throws, it surfaces the error and a retry
+ *  button so the user isn't stuck on a permanent spinner. */
 @Composable
-private fun BootstrapScreen(state: BootstrapState) {
+private fun BootstrapScreen(error: String?, onRetry: () -> Unit) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
-        androidx.compose.foundation.layout.Column(
+        Column(
             horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(32.dp),
         ) {
-            CircularProgressIndicator()
+            if (error == null) {
+                CircularProgressIndicator()
+            } else {
+                Text(
+                    text = stringResource(
+                        if (error == "BOOTSTRAP_TIMEOUT") R.string.bootstrap_timeout
+                        else R.string.bootstrap_error,
+                    ),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                if (error != "BOOTSTRAP_TIMEOUT") {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.height(20.dp))
+                Button(onClick = onRetry) {
+                    Text(stringResource(R.string.common_retry))
+                }
+            }
         }
     }
 }

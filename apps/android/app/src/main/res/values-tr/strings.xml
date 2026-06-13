@@ -16,6 +16,8 @@
     <string name="common_show">Göster</string>
     <string name="common_hide">Gizle</string>
     <string name="common_loading">Yükleniyor…</string>
+    <string name="bootstrap_timeout">Başlatma normalden uzun sürüyor. Tekrar denemek için dokunun.</string>
+    <string name="bootstrap_error">Uygulama başlatılamadı:</string>
     <string name="common_unnamed">İsimsiz</string>
 
     <!-- Screen titles -->
@@ -246,4 +248,5 @@
     <string name="config_device_id_copied">Cihaz kimliği panoya kopyalandı.</string>
     <string name="config_about_url">https://iptv.ehtudo.app/</string>
     <string name="config_about_url_label">Web sitesini aç</string>
+    <string name="empty_configure_credentials_prompt">İzlemeye başlamak için Ayarlar sekmesinden kullanıcı adınızı ve şifrenizi yapılandırın.</string>
 </resources>

@@ -121,6 +121,17 @@ class PlaylistContentStore(
         _loadError.value = null
         _loadingMessage.value = null
 
+        // No-credentials short-circuit. The Eh!Iptv build auto-creates a
+        // row on first launch with empty user/pass; calling the Xtream API
+        // in that state always fails with a missing-parameter response.
+        // Skip the network sync so the content tabs simply show their
+        // empty state, and the user can fill in credentials from the
+        // settings tab.
+        if (playlist.username.isBlank() || playlist.password.isBlank()) {
+            _isLoading.value = false
+            return
+        }
+
         if (_activePlaylistId.value != playlist.id) {
             clearLists()
             _activePlaylistId.value = playlist.id

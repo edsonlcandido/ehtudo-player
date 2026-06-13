@@ -16,6 +16,8 @@
     <string name="common_show">Mostrar</string>
     <string name="common_hide">Ocultar</string>
     <string name="common_loading">Carregando…</string>
+    <string name="bootstrap_timeout">A inicialização está demorando mais que o normal. Toque em tentar novamente.</string>
+    <string name="bootstrap_error">Não foi possível iniciar o aplicativo:</string>
     <string name="common_unnamed">Sem nome</string>
 
     <!-- Screen titles -->
@@ -329,4 +331,5 @@
     <string name="config_device_id_copied">ID do dispositivo copiado.</string>
     <string name="config_about_url">https://iptv.ehtudo.app/</string>
     <string name="config_about_url_label">Abrir site</string>
+    <string name="empty_configure_credentials_prompt">Configure seu usuário e senha na aba Configurações para começar a assistir.</string>
 </resources>

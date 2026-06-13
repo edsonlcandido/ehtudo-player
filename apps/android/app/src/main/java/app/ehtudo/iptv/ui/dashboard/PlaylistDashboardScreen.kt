@@ -117,6 +117,16 @@ fun PlaylistDashboardScreen(
     val seriesByCategory by store.seriesItemsByCategoryId.collectAsStateWithLifecycle()
 
     val pagerState = rememberPagerState(initialPage = 3) { TAB_COUNT }
+
+    // The Eh!Iptv build auto-creates a default playlist with empty
+    // credentials on first launch. Until the user fills them in we
+    // don't try to load the catalog (the network call would fail), so
+    // the body should always render the pager — not ErrorState or
+    // LoadingState — and let the user land on the Settings tab.
+    val hasCredentials = playlist?.let {
+        it.username.isNotBlank() && it.password.isNotBlank()
+    } ?: false
+
     // Picker sheet — opened from the list icon on content tabs. Holds the
     // type ("live" / "vod" / "series") of the active tab so the sheet's
     // hide/unhide writes the right namespace.
@@ -184,9 +194,34 @@ fun PlaylistDashboardScreen(
         },
     ) { innerPadding ->
         when {
-            // First-time bootstrap with no categories yet: show the
-            // overall spinner + progress message instead of three empty
-            // tabs.
+            // Fresh install (or wiped credentials): skip the loading/error
+            // fallbacks and let the user land on the Settings tab.
+            !hasCredentials ->
+                DashboardPager(
+                    pagerState = pagerState,
+                    playlistId = playlistId,
+                    liveCats = liveCats,
+                    vodCats = vodCats,
+                    seriesCats = seriesCats,
+                    liveByCategory = liveByCategory,
+                    vodByCategory = vodByCategory,
+                    seriesByCategory = seriesByCategory,
+                    streamsLoaded = streamsLoaded,
+                    hasCredentials = false,
+                    appVersion = appVersion,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    onOpenMovie = onOpenMovie,
+                    onOpenSeries = onOpenSeries,
+                    onOpenLiveCategory = onOpenLiveCategory,
+                    onOpenVodCategory = onOpenVodCategory,
+                    onOpenSeriesCategory = onOpenSeriesCategory,
+                    onPlayLive = onPlayLive,
+                    onResumeEpisode = onResumeEpisode,
+                    onOpenDownloads = onOpenDownloads,
+                    onOpenHistory = onOpenHistory,
+                )
             loadError != null && liveCats.isEmpty() && vodCats.isEmpty() && seriesCats.isEmpty() ->
                 ErrorState(
                     modifier = Modifier.padding(innerPadding),
@@ -202,65 +237,31 @@ fun PlaylistDashboardScreen(
                     message = loadingMessage,
                 )
             else ->
-                HorizontalPager(
-                    state = pagerState,
+                DashboardPager(
+                    pagerState = pagerState,
+                    playlistId = playlistId,
+                    liveCats = liveCats,
+                    vodCats = vodCats,
+                    seriesCats = seriesCats,
+                    liveByCategory = liveByCategory,
+                    vodByCategory = vodByCategory,
+                    seriesByCategory = seriesByCategory,
+                    streamsLoaded = streamsLoaded,
+                    hasCredentials = true,
+                    appVersion = appVersion,
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(innerPadding),
-                    // Tab geçişi sadece alt bar'daki tıklamayla; swipe ile
-                    // kazara yan tab'a kaymak istemiyoruz. animateScrollToPage
-                    // bu bayrak false iken de çalışmaya devam eder.
-                    userScrollEnabled = false,
-                ) { page ->
-                    when (page) {
-                        0 -> LiveTabBody(
-                            playlistId = playlistId,
-                            categories = liveCats,
-                            byCategoryId = liveByCategory,
-                            streamsLoading = !streamsLoaded,
-                            onOpenCategory = onOpenLiveCategory,
-                            onPlayChannel = onPlayLive,
-                            onResumeMovie = onOpenMovie,
-                            onResumeEpisode = onResumeEpisode,
-                        )
-                        1 -> MoviesTabBody(
-                            playlistId = playlistId,
-                            categories = vodCats,
-                            byCategoryId = vodByCategory,
-                            streamsLoading = !streamsLoaded,
-                            onOpenMovie = onOpenMovie,
-                            onOpenCategory = onOpenVodCategory,
-                            onResumeMovie = onOpenMovie,
-                            onResumeEpisode = onResumeEpisode,
-                            onPlayLive = onPlayLive,
-                        )
-                        2 -> SeriesTabBody(
-                            playlistId = playlistId,
-                            categories = seriesCats,
-                            byCategoryId = seriesByCategory,
-                            streamsLoading = !streamsLoaded,
-                            onOpenSeries = onOpenSeries,
-                            onOpenCategory = onOpenSeriesCategory,
-                            onResumeMovie = onOpenMovie,
-                            onResumeEpisode = onResumeEpisode,
-                            onPlayLive = onPlayLive,
-                        )
-                        3 -> app.ehtudo.iptv.ui.settings.PlaylistSettingsBody(
-                            playlistId = playlistId,
-                            appVersion = appVersion,
-                            onOpenDownloads = onOpenDownloads,
-                            onOpenHistory = onOpenHistory,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                        4 -> app.ehtudo.iptv.ui.search.SearchBody(
-                            playlistId = playlistId,
-                            onOpenMovie = onOpenMovie,
-                            onOpenSeries = onOpenSeries,
-                            onPlayLive = onPlayLive,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                }
+                    onOpenMovie = onOpenMovie,
+                    onOpenSeries = onOpenSeries,
+                    onOpenLiveCategory = onOpenLiveCategory,
+                    onOpenVodCategory = onOpenVodCategory,
+                    onOpenSeriesCategory = onOpenSeriesCategory,
+                    onPlayLive = onPlayLive,
+                    onResumeEpisode = onResumeEpisode,
+                    onOpenDownloads = onOpenDownloads,
+                    onOpenHistory = onOpenHistory,
+                )
         }
     }
 
@@ -290,6 +291,105 @@ fun PlaylistDashboardScreen(
             },
             onDismiss = { pickerType = null },
         )
+    }
+}
+
+/**
+ * The five-tab pager (Live / Movies / Series / Settings / Search). Pulled
+ * out of [PlaylistDashboardScreen] so the `when` body can pick between
+ * the regular flow, the loading state, the error state, and the
+ * no-credentials flow without duplicating ~60 lines of `HorizontalPager`
+ * branches.
+ *
+ * The pager is only ever rendered when the dashboard has decided to
+ * show it (i.e. the loading/error/no-creds fallbacks have already
+ * been considered). `userScrollEnabled = false` matches the original
+ * behaviour — tab changes only happen through the bottom bar.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DashboardPager(
+    pagerState: androidx.compose.foundation.pager.PagerState,
+    playlistId: String,
+    liveCats: List<CategoryEntity>,
+    vodCats: List<CategoryEntity>,
+    seriesCats: List<CategoryEntity>,
+    liveByCategory: Map<String, List<LiveStreamWithCategory>>,
+    vodByCategory: Map<String, List<VodStreamWithCategory>>,
+    seriesByCategory: Map<String, List<SeriesWithCategory>>,
+    streamsLoaded: Boolean,
+    hasCredentials: Boolean,
+    appVersion: String,
+    modifier: Modifier = Modifier,
+    onOpenMovie: (Int) -> Unit,
+    onOpenSeries: (Int) -> Unit,
+    onOpenLiveCategory: (String) -> Unit,
+    onOpenVodCategory: (String) -> Unit,
+    onOpenSeriesCategory: (String) -> Unit,
+    onPlayLive: (Int) -> Unit,
+    onResumeEpisode: (String) -> Unit,
+    onOpenDownloads: () -> Unit,
+    onOpenHistory: () -> Unit,
+) {
+    HorizontalPager(
+        state = pagerState,
+        modifier = modifier,
+        // Tab geçişi sadece alt bar'daki tıklamayla; swipe ile
+        // kazara yan tab'a kaymak istemiyoruz. animateScrollToPage
+        // bu bayrak false iken de çalışmaya devam eder.
+        userScrollEnabled = false,
+    ) { page ->
+        when (page) {
+            0 -> LiveTabBody(
+                playlistId = playlistId,
+                categories = liveCats,
+                byCategoryId = liveByCategory,
+                streamsLoading = !streamsLoaded,
+                hasCredentials = hasCredentials,
+                onOpenCategory = onOpenLiveCategory,
+                onPlayChannel = onPlayLive,
+                onResumeMovie = onOpenMovie,
+                onResumeEpisode = onResumeEpisode,
+            )
+            1 -> MoviesTabBody(
+                playlistId = playlistId,
+                categories = vodCats,
+                byCategoryId = vodByCategory,
+                streamsLoading = !streamsLoaded,
+                hasCredentials = hasCredentials,
+                onOpenMovie = onOpenMovie,
+                onOpenCategory = onOpenVodCategory,
+                onResumeMovie = onOpenMovie,
+                onResumeEpisode = onResumeEpisode,
+                onPlayLive = onPlayLive,
+            )
+            2 -> SeriesTabBody(
+                playlistId = playlistId,
+                categories = seriesCats,
+                byCategoryId = seriesByCategory,
+                streamsLoading = !streamsLoaded,
+                hasCredentials = hasCredentials,
+                onOpenSeries = onOpenSeries,
+                onOpenCategory = onOpenSeriesCategory,
+                onResumeMovie = onOpenMovie,
+                onResumeEpisode = onResumeEpisode,
+                onPlayLive = onPlayLive,
+            )
+            3 -> app.ehtudo.iptv.ui.settings.PlaylistSettingsBody(
+                playlistId = playlistId,
+                appVersion = appVersion,
+                onOpenDownloads = onOpenDownloads,
+                onOpenHistory = onOpenHistory,
+                modifier = Modifier.fillMaxSize(),
+            )
+            4 -> app.ehtudo.iptv.ui.search.SearchBody(
+                playlistId = playlistId,
+                onOpenMovie = onOpenMovie,
+                onOpenSeries = onOpenSeries,
+                onPlayLive = onPlayLive,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
 }
 
@@ -381,6 +481,7 @@ private fun LiveTabBody(
     categories: List<CategoryEntity>,
     byCategoryId: Map<String, List<LiveStreamWithCategory>>,
     streamsLoading: Boolean,
+    hasCredentials: Boolean,
     onOpenCategory: (String) -> Unit,
     onPlayChannel: (Int) -> Unit,
     onResumeMovie: (Int) -> Unit = {},
@@ -393,7 +494,15 @@ private fun LiveTabBody(
         categories.filter { it.id !in hiddenIds }
     }
     if (visibleCategories.isEmpty()) {
-        EmptyTab(message = if (categories.isEmpty()) stringResource(app.ehtudo.iptv.R.string.empty_no_categories) else stringResource(app.ehtudo.iptv.R.string.empty_categories_hidden))
+        val msg = when {
+            categories.isEmpty() && !hasCredentials ->
+                stringResource(app.ehtudo.iptv.R.string.empty_configure_credentials_prompt)
+            categories.isEmpty() ->
+                stringResource(app.ehtudo.iptv.R.string.empty_no_categories)
+            else ->
+                stringResource(app.ehtudo.iptv.R.string.empty_categories_hidden)
+        }
+        EmptyTab(message = msg)
         return
     }
     LazyColumn(
@@ -439,6 +548,7 @@ private fun MoviesTabBody(
     categories: List<CategoryEntity>,
     byCategoryId: Map<String, List<VodStreamWithCategory>>,
     streamsLoading: Boolean,
+    hasCredentials: Boolean,
     onOpenMovie: (Int) -> Unit,
     onOpenCategory: (String) -> Unit,
     onResumeMovie: (Int) -> Unit = {},
@@ -452,7 +562,15 @@ private fun MoviesTabBody(
         categories.filter { it.id !in hiddenIds }
     }
     if (visibleCategories.isEmpty()) {
-        EmptyTab(message = if (categories.isEmpty()) stringResource(app.ehtudo.iptv.R.string.empty_no_categories) else stringResource(app.ehtudo.iptv.R.string.empty_categories_hidden))
+        val msg = when {
+            categories.isEmpty() && !hasCredentials ->
+                stringResource(app.ehtudo.iptv.R.string.empty_configure_credentials_prompt)
+            categories.isEmpty() ->
+                stringResource(app.ehtudo.iptv.R.string.empty_no_categories)
+            else ->
+                stringResource(app.ehtudo.iptv.R.string.empty_categories_hidden)
+        }
+        EmptyTab(message = msg)
         return
     }
     LazyColumn(
@@ -505,6 +623,7 @@ private fun SeriesTabBody(
     categories: List<CategoryEntity>,
     byCategoryId: Map<String, List<SeriesWithCategory>>,
     streamsLoading: Boolean,
+    hasCredentials: Boolean,
     onOpenSeries: (Int) -> Unit,
     onOpenCategory: (String) -> Unit,
     onResumeMovie: (Int) -> Unit = {},
@@ -518,7 +637,15 @@ private fun SeriesTabBody(
         categories.filter { it.id !in hiddenIds }
     }
     if (visibleCategories.isEmpty()) {
-        EmptyTab(message = if (categories.isEmpty()) stringResource(app.ehtudo.iptv.R.string.empty_no_categories) else stringResource(app.ehtudo.iptv.R.string.empty_categories_hidden))
+        val msg = when {
+            categories.isEmpty() && !hasCredentials ->
+                stringResource(app.ehtudo.iptv.R.string.empty_configure_credentials_prompt)
+            categories.isEmpty() ->
+                stringResource(app.ehtudo.iptv.R.string.empty_no_categories)
+            else ->
+                stringResource(app.ehtudo.iptv.R.string.empty_categories_hidden)
+        }
+        EmptyTab(message = msg)
         return
     }
     LazyColumn(
