@@ -392,7 +392,7 @@ struct DetailPlotBlock: View {
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
                 } label: {
-                    Text(expanded ? "Daha az" : "Daha fazla")
+                    Text(expanded ? L("detail.show_less") : L("detail.show_more"))
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(Color.accentColor)
                 }
@@ -445,7 +445,7 @@ struct DetailSeasonTabBar: View {
                                 selectedId = season.id
                             }
                         } label: {
-                            Text(season.name ?? "Sezon \(season.seasonNumber)")
+                            Text(season.name ?? L("series.season_format", season.seasonNumber))
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.85))
                                 .padding(.horizontal, 14)

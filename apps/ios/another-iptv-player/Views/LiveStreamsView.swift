@@ -57,6 +57,10 @@ struct LiveStreamsView: View {
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let loadError = contentStore.loadError, debouncedQuery.isEmpty {
+                    CatalogLoadErrorView(message: loadError) {
+                        Task { await contentStore.loadPlaylist(playlist) }
+                    }
                 } else {
                     VStack(spacing: 12) {
                         Image(systemName: "tv.slash")
@@ -199,6 +203,14 @@ struct LiveStreamsView: View {
                     }
                 }
             }
+            .refreshable {
+                // SwiftUI, ScrollView yeniden çizilince refreshable task'ını iptal
+                // edebiliyor; iptal child URLSession isteklerine yayılıp "cancelled"
+                // hatası üretiyordu. Bağımsız Task iptalden etkilenmez; await task.value
+                // spinner'ı iş bitene dek tutar.
+                let work = Task { await contentStore.refreshFromNetwork(playlist: playlist) }
+                await work.value
+            }
             .onChange(of: pendingScrollTarget) { _, target in
                 guard let target else { return }
                 withAnimation(.easeOut(duration: 0.25)) {
@@ -267,10 +279,13 @@ struct LiveStreamsView: View {
         if let match = livePlaybackQueue.first(where: { $0.streamId == streamId }) {
             return match
         }
+        // Lazy arama: eager flatMap+map tüm katalogu iki kez kopyalayıp tap gecikmesine
+        // onlarca ms ekliyordu; .lazy.joined() ara dizi kurmaz, .first eşleşmede durur.
         return contentStore.liveStreamsByCategoryId.values
-            .flatMap { $0 }
-            .map(\.stream)
-            .first(where: { $0.streamId == streamId })
+            .lazy
+            .joined()
+            .first(where: { $0.stream.streamId == streamId })?
+            .stream
     }
 }
 
@@ -352,7 +367,12 @@ struct LiveCategoryShelfRow: View, Equatable {
         let urls = list.prefix(CategoryShelf.prefetchHeadCount)
             .compactMap { $0.stream.streamIcon }
             .compactMap { URL(string: $0) }
-        ListImagePrefetch.start(urls: urls, posterMetrics: posterMetrics, isShelf: true)
+        ListImagePrefetch.start(
+            urls: urls,
+            width: posterMetrics.liveShelfIcon,
+            height: posterMetrics.liveShelfIcon,
+            loadProfile: .shelf
+        )
     }
 }
 
@@ -495,11 +515,11 @@ struct LiveCategoryContent: View {
                 }
                 .onChange(of: items) { _, newValue in
                     let urls = newValue.compactMap { $0.stream.streamIcon }.compactMap { URL(string: $0) }
-                    ListImagePrefetch.start(urls: urls, posterMetrics: posterMetrics)
+                    ListImagePrefetch.start(urls: urls, width: posterMetrics.liveGridIconSize, height: posterMetrics.liveGridIconSize, loadProfile: .grid)
                 }
                 .onAppear {
                     let urls = items.compactMap { $0.stream.streamIcon }.compactMap { URL(string: $0) }
-                    ListImagePrefetch.start(urls: urls, posterMetrics: posterMetrics)
+                    ListImagePrefetch.start(urls: urls, width: posterMetrics.liveGridIconSize, height: posterMetrics.liveGridIconSize, loadProfile: .grid)
                 }
             }
         }
@@ -534,6 +554,21 @@ struct LivePlayerShell: View {
         self.queue = queue
         self.sections = sections
         self.subtitle = subtitle
+        // Sections shell ömrü boyunca değişmez; her body değerlendirmesinde (kanal zap,
+        // panel aç/kapa) on binlerce kanalı yeniden map'lemek yerine bir kez kur.
+        self.panelSections = sections.map { section in
+            ChannelPanelSection(
+                id: section.id,
+                title: section.title,
+                items: section.streams.map { stream in
+                    ChannelPanelItem(
+                        id: String(stream.streamId),
+                        name: stream.name,
+                        iconURL: stream.streamIcon.flatMap { URL(string: $0) }
+                    )
+                }
+            )
+        }
         let initialURL = PlaybackURLBuilder(playlist: playlist).liveURL(streamId: initialStream.streamId)
         _session = State(initialValue: LivePlaybackSession(
             stream: initialStream,
@@ -547,21 +582,7 @@ struct LivePlayerShell: View {
         queue.firstIndex(where: { $0.streamId == session.stream.streamId })
     }
 
-    private var panelSections: [ChannelPanelSection] {
-        sections.map { section in
-            ChannelPanelSection(
-                id: section.id,
-                title: section.title,
-                items: section.streams.map { stream in
-                    ChannelPanelItem(
-                        id: String(stream.streamId),
-                        name: stream.name,
-                        iconURL: stream.streamIcon.flatMap { URL(string: $0) }
-                    )
-                }
-            )
-        }
-    }
+    private let panelSections: [ChannelPanelSection]
 
     var body: some View {
         if let url = session.url {

@@ -18,8 +18,18 @@ final class M3UContentStore: ObservableObject {
     @Published private(set) var channelsByGroup: [String: [DBM3UChannel]] = [:]
     @Published private(set) var groupNames: [String] = []
 
-    /// `group-title` boş olan kanallar için kullanılan etiket.
-    static let ungroupedLabel = "Diğer"
+    /// `group-title` boş olan kanallar için kullanılan KANONİK anahtar. Lookup'lar
+    /// (queue, panel, hidden-category id'leri) her zaman bu anahtarı kullanmalı;
+    /// kullanıcıya gösterirken `displayName(forGroup:)` ile yerelleştirilir.
+    /// Not: HiddenCategoryStore bu değeri id olarak persist ettiği için değiştirmek
+    /// mevcut kullanıcıların gizli kategori seçimlerini bozar — "Diğer" kalmalı.
+    nonisolated static let ungroupedLabel = "Diğer"
+
+    /// Görünen ad: kanonik ungrouped anahtarı aktif dile çevrilir, diğerleri aynen döner.
+    /// Panel kurucuları detached task'ta çalıştığı için nonisolated.
+    nonisolated static func displayName(forGroup group: String) -> String {
+        group == ungroupedLabel ? L("m3u.ungrouped_label") : group
+    }
 
     /// Aktif playlist'in filtre bayrağı — toggle değişince güncellenir ve sonraki load'da uygulanır.
     private var filterAdultContent: Bool = false
@@ -55,6 +65,16 @@ final class M3UContentStore: ObservableObject {
             guard loadToken == token else { return }
             loadError = error.localizedDescription
         }
+    }
+
+    /// Dashboard'dan çıkışta 310K+ kanallık kopyalar singleton'da kalmasın (bkz.
+    /// PlaylistContentStore.unload).
+    func unload() {
+        loadToken = nil
+        activePlaylistId = nil
+        clearLists()
+        loadError = nil
+        isLoading = false
     }
 
     func reloadIfActive(playlist: Playlist) async {

@@ -8,6 +8,9 @@ struct PlaylistSettingsView: View {
     @State private var authResponse: XtreamAuthResponse?
     @State private var isLoading = true
     @State private var errorMessage: String?
+    /// Katalog yenileme (syncContents) hatası — playlist bilgi hatasından (errorMessage)
+    /// ayrı tutulur; eskiden ikisi karışıyor ve "Try Again" yanlış işlemi tetikliyordu.
+    @State private var syncError: String?
 
     @State private var isPasswordRevealed = false
 
@@ -25,6 +28,7 @@ struct PlaylistSettingsView: View {
     @AppStorage("player.pipEnabled") private var pipEnabled = true
     @AppStorage("player.continuePlayingInBackground") private var continuePlayingInBackground = true
     @AppStorage("player.speedUpOnLongPress") private var speedUpOnLongPress = true
+    @AppStorage("player.autoPlayNextEpisode") private var autoPlayNextEpisode = true
     @AppStorage("download.wifi_only") private var downloadWifiOnly = false
 
     @State private var downloadUsedBytes: Int64 = 0
@@ -66,6 +70,18 @@ struct PlaylistSettingsView: View {
                     Text(msg)
                         .font(.caption)
                         .foregroundColor(.secondary)
+                }
+
+                if let syncError {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(syncError)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                        Button(L("common.try_again")) {
+                            Task { await syncContents() }
+                        }
+                        .font(.caption.weight(.semibold))
+                    }
                 }
             }
 
@@ -139,6 +155,15 @@ struct PlaylistSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+
+                Toggle(isOn: $autoPlayNextEpisode) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L("settings.player.autonext.title"))
+                        Text(L("settings.player.autonext.desc"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
 
             // — Playlist & Abonelik Bilgileri (birleşik) —
@@ -191,8 +216,11 @@ struct PlaylistSettingsView: View {
                     }) {
                         Image(systemName: isPasswordRevealed ? "eye.slash" : "eye")
                             .foregroundColor(.accentColor)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(BorderlessButtonStyle())
+                    .accessibilityLabel(isPasswordRevealed ? L("settings.hide_password") : L("settings.show_password"))
                 }
 
                 if isLoading {
@@ -463,14 +491,14 @@ struct PlaylistSettingsView: View {
             await syncContents()
         } catch {
             await MainActor.run {
-                self.errorMessage = L("misc.save_setting_error", error.localizedDescription)
+                self.syncError = L("misc.save_setting_error", error.localizedDescription)
             }
         }
     }
 
     private func syncContents() async {
         isSyncing = true
-        errorMessage = nil
+        syncError = nil
         print("--- REFRESH SETTINGS: SYNC STARTED (SQLITE) ---")
         let totalStartTime = Date()
 
@@ -487,7 +515,7 @@ struct PlaylistSettingsView: View {
             }
         } catch {
             await MainActor.run {
-                self.errorMessage = L("misc.refresh_error", error.localizedDescription)
+                self.syncError = L("misc.refresh_error", error.localizedDescription)
                 self.isSyncing = false
                 self.progressMessage = nil
             }

@@ -32,6 +32,8 @@ final class DownloadManager: NSObject, ObservableObject {
     static let maxConcurrentPerPlaylist = 1
     /// Bir indirme hata alınca kaç kez otomatik kuyruğun sonuna geri eklenir. Aşılınca `.failed`.
     private static let maxAutoRetries = 3
+    /// Disk dolmadan bırakılacak güvenlik payı — sistem ve diğer uygulamalar için.
+    private static let minFreeDiskMargin: Int64 = 200 * 1024 * 1024
 
     /// Aktif indirmelerin ilerlemesi, view'ların gözlemlemesi için.
     @Published private(set) var progress: [String: DownloadProgress] = [:]
@@ -51,8 +53,15 @@ final class DownloadManager: NSObject, ObservableObject {
     private var enqueueInFlight: Set<String> = []
     /// Aynı task için didWriteData defalarca tetiklenir; totalBytes'i sadece ilk gerçek değerde DB'ye yazıyoruz.
     private var totalBytesPersistedFor: Set<Int> = []
+    /// Son yayınlanan yüzde (taskIdentifier → 0…100). didWriteData saniyede onlarca kez
+    /// tetiklenir; her seferinde @Published progress'e yazmak tüm DownloadButton'ları ve
+    /// DownloadsView'ı yeniden render eder. Yüzde değişmeden publish edilmez.
+    private var lastPublishedPercent: [Int: Int] = [:]
     /// Hata alan indirmelerin bellek içi yeniden-deneme sayacı.
     private var autoRetryCountById: [String: Int] = [:]
+    /// Disk alanı yetmediği için bizim iptal ettiğimiz indirmeler: delegate'in cancelled
+    /// dalında requeue yerine kalıcı failed işaretlenir.
+    private var spaceFailedIds: Set<String> = []
     /// `pumpQueue` aynı anda bir kere çalışsın diye — paralel çağrılar `pumpPending`'ı set eder.
     private var pumpInFlight = false
     /// Pump çalışırken başka bir pump tetiklendiyse, mevcut pump bitmeden önce bir kez daha döner.
@@ -113,8 +122,12 @@ final class DownloadManager: NSObject, ObservableObject {
                     if var row = try DBDownloadedItem.filter(Column("id") == orphan.id).fetchOne(db) {
                         row.status = DownloadStatus.queued.rawValue
                         row.errorMessage = nil
-                        row.totalBytes = 0
-                        row.downloadedBytes = 0
+                        // Keep byte counters when resume data exists — the restart will
+                        // continue from the downloaded prefix, not from zero.
+                        if !DownloadStorage.hasResumeData(forId: orphan.id) {
+                            row.totalBytes = 0
+                            row.downloadedBytes = 0
+                        }
                         try row.update(db)
                     }
                 }
@@ -196,6 +209,17 @@ final class DownloadManager: NSObject, ObservableObject {
                 try item.save(db)
             }
         } catch {
+            // Sessiz yutma: kullanıcı Download'a bastı, buton idle kaldı, hiçbir iz yok.
+            // failed satırı yaz ki DownloadsView'da görünsün ve retry edilebilsin.
+            downloadLog.error("enqueue id=\(id, privacy: .public) — DB insert failed: \(error.localizedDescription, privacy: .public)")
+            await persistFailed(
+                id: id, playlistId: playlistId, streamId: streamId, type: type,
+                title: title, secondaryTitle: secondaryTitle, imageURL: imageURL,
+                remoteURL: remoteURL.absoluteString, relPath: relPath,
+                containerExtension: containerExtension, seriesId: seriesId,
+                seasonNumber: seasonNumber, episodeNumber: episodeNumber,
+                errorMessage: error.localizedDescription
+            )
             return
         }
         dbVersion &+= 1
@@ -215,6 +239,7 @@ final class DownloadManager: NSObject, ObservableObject {
         idToPlaylistId.removeValue(forKey: id)
         progress.removeValue(forKey: id)
         autoRetryCountById.removeValue(forKey: id)
+        DownloadStorage.removeResumeData(forId: id)
         Task { [id] in
             await self.deleteRow(id: id, removeFile: true)
             if hadActiveTask { await self.pumpQueue() }
@@ -232,6 +257,7 @@ final class DownloadManager: NSObject, ObservableObject {
         idToPlaylistId.removeValue(forKey: id)
         progress.removeValue(forKey: id)
         autoRetryCountById.removeValue(forKey: id)
+        DownloadStorage.removeResumeData(forId: id)
         await deleteRow(id: id, removeFile: true)
         if hadActiveTask { await pumpQueue() }
     }
@@ -254,6 +280,7 @@ final class DownloadManager: NSObject, ObservableObject {
             autoRetryCountById.removeValue(forKey: id)
         }
         DownloadStorage.removePlaylistDirectory(playlistId: playlistId)
+        DownloadStorage.removeResumeData(playlistId: playlistId)
         dbVersion &+= 1
         if hadAny { Task { await pumpQueue() } }
     }
@@ -299,6 +326,7 @@ final class DownloadManager: NSObject, ObservableObject {
         }
         // Playlist klasörünü tamamen kaldır (subdir + olası boş klasörler).
         DownloadStorage.removePlaylistDirectory(playlistId: playlistId)
+        DownloadStorage.removeResumeData(playlistId: playlistId)
         _ = try? await AppDatabase.shared.write { db in
             try DBDownloadedItem.filter(Column("playlistId") == playlistId).deleteAll(db)
         }
@@ -326,6 +354,7 @@ final class DownloadManager: NSObject, ObservableObject {
         _ = try? await AppDatabase.shared.write { db in
             try DBDownloadedItem.deleteAll(db)
         }
+        DownloadStorage.removeAllResumeData()
         dbVersion &+= 1
     }
 
@@ -398,6 +427,21 @@ final class DownloadManager: NSObject, ObservableObject {
                     continue
                 }
 
+                // Boyut önceki denemeden biliniyorsa başlamadan sığacağını doğrula.
+                if next.totalBytes > 0 {
+                    let remainingBytes = Int64(max(next.totalBytes - next.downloadedBytes, 0))
+                    if let available = DownloadStorage.availableCapacityBytes(),
+                       available < remainingBytes + Self.minFreeDiskMargin {
+                        downloadLog.error("pumpQueue no-space id=\(next.id, privacy: .public) needed=\(remainingBytes) available=\(available)")
+                        await markFailed(
+                            id: next.id,
+                            error: NSError(domain: "Download", code: -4,
+                                           userInfo: [NSLocalizedDescriptionKey: L("download.error.no_space")])
+                        )
+                        continue
+                    }
+                }
+
                 _ = try? await AppDatabase.shared.write { db in
                     if var row = try DBDownloadedItem.filter(Column("id") == next.id).fetchOne(db) {
                         row.status = DownloadStatus.downloading.rawValue
@@ -411,16 +455,29 @@ final class DownloadManager: NSObject, ObservableObject {
     }
 
     /// DB row'u zaten var kabul edilir. URLSession task'ini kurar ve bellek içi haritalara yazar.
+    /// Önceki denemeden resume data varsa kaldığı yerden devam eder, yoksa sıfırdan başlar.
     private func startTask(id: String, playlistId: UUID, remoteURL: URL, relPath: String) {
         downloadLog.info("start id=\(id, privacy: .public) playlist=\(playlistId.uuidString, privacy: .public) url=\(remoteURL.absoluteString, privacy: .public)")
-        var request = URLRequest(url: remoteURL)
-        request.allowsCellularAccess = !Self.wifiOnly
-        let task = session.downloadTask(with: request)
+        let task: URLSessionDownloadTask
+        if let resumeData = DownloadStorage.loadResumeData(forId: id) {
+            // Consume the blob up front: if this attempt fails again we either get
+            // fresh resume data (persisted anew in didCompleteWithError) or the next
+            // retry falls back to a clean full download.
+            DownloadStorage.removeResumeData(forId: id)
+            downloadLog.info("start id=\(id, privacy: .public) — resuming with \(resumeData.count) bytes of resume data")
+            task = session.downloadTask(withResumeData: resumeData)
+        } else {
+            var request = URLRequest(url: remoteURL)
+            request.allowsCellularAccess = !Self.wifiOnly
+            task = session.downloadTask(with: request)
+        }
         taskToId[task.taskIdentifier] = id
         taskToRelativePath[task.taskIdentifier] = relPath
         idToTask[id] = task
         idToPlaylistId[id] = playlistId
-        progress[id] = DownloadProgress(totalBytes: 0, downloadedBytes: 0)
+        if progress[id] == nil {
+            progress[id] = DownloadProgress(totalBytes: 0, downloadedBytes: 0)
+        }
         task.resume()
     }
 
@@ -501,10 +558,29 @@ extension DownloadManager: URLSessionDownloadDelegate {
         MainActor.assumeIsolated {
             let taskId = downloadTask.taskIdentifier
             guard let id = self.taskToId[taskId] else { return }
-            self.progress[id] = DownloadProgress(
+            let newProgress = DownloadProgress(
                 totalBytes: max(0, totalBytesExpectedToWrite),
                 downloadedBytes: max(0, totalBytesWritten)
             )
+            let percent = Int(newProgress.fraction * 100)
+            let totalJustBecameKnown = totalBytesExpectedToWrite > 0
+                && !self.totalBytesPersistedFor.contains(taskId)
+            if self.lastPublishedPercent[taskId] != percent || totalJustBecameKnown {
+                self.lastPublishedPercent[taskId] = percent
+                self.progress[id] = newProgress
+            }
+            // Content-Length öğrenilir öğrenilmez sığmayacak dosyayı kes: 2 GB boş alana
+            // 6 GB film indirmek saatler sonra disk-dolu hatasıyla (ve 3 retry ile) bitiyordu.
+            if totalJustBecameKnown {
+                let remaining = totalBytesExpectedToWrite - totalBytesWritten
+                if let available = DownloadStorage.availableCapacityBytes(),
+                   available < remaining + Self.minFreeDiskMargin {
+                    downloadLog.error("no-space id=\(id, privacy: .public) needed=\(remaining) available=\(available)")
+                    self.spaceFailedIds.insert(id)
+                    downloadTask.cancel()
+                    return
+                }
+            }
             if totalBytesExpectedToWrite > 0,
                !self.totalBytesPersistedFor.contains(taskId) {
                 self.totalBytesPersistedFor.insert(taskId)
@@ -575,24 +651,86 @@ extension DownloadManager: URLSessionDownloadDelegate {
         MainActor.assumeIsolated {
             let taskId = task.taskIdentifier
             self.totalBytesPersistedFor.remove(taskId)
-            guard let id = self.taskToId[taskId] else { return }
-            self.taskToId.removeValue(forKey: taskId)
+            self.lastPublishedPercent.removeValue(forKey: taskId)
+            // Guard'dan ÖNCE temizle: cancel/delete yolları taskToId'yi çoktan silmiş
+            // olabilir; aksi halde her iptal edilen indirme bir path girdisi sızdırır.
             self.taskToRelativePath.removeValue(forKey: taskId)
+            let resumeData = (error as NSError?)?.userInfo[NSURLSessionDownloadTaskResumeData] as? Data
+            guard let id = self.taskToId[taskId] else {
+                // No in-memory mapping — typically a delegate event delivered right after a
+                // relaunch (force-quit cancels background tasks and hands us their resume
+                // data here, before restoreOutstandingTasks could match anything). Re-attach
+                // the resume data to the matching DB row so the download continues from
+                // where it stopped instead of restarting at byte 0.
+                if let resumeData,
+                   let url = task.originalRequest?.url?.absoluteString ?? task.currentRequest?.url?.absoluteString {
+                    Task { await self.adoptOrphanResumeData(resumeData, remoteURL: url) }
+                }
+                return
+            }
+            self.taskToId.removeValue(forKey: taskId)
             self.idToTask.removeValue(forKey: id)
             self.idToPlaylistId.removeValue(forKey: id)
 
             if let error = error {
                 let ns = error as NSError
-                // Cancel edildiyse row zaten deleteRow ile silinmişti.
+                // User cancellation removes the id mappings before calling task.cancel(),
+                // so reaching here with a known id means the SYSTEM cancelled the task
+                // (session invalidation, OS reclaim). Keep the resume data and requeue;
+                // for a genuine user cancel there is nothing to do (row already deleted).
                 if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled {
+                    // Disk alanı yetmediği için bizim kestiğimiz task: requeue etme.
+                    if self.spaceFailedIds.remove(id) != nil {
+                        DownloadStorage.removeResumeData(forId: id)
+                        self.autoRetryCountById.removeValue(forKey: id)
+                        Task {
+                            await self.markFailed(id: id, error: NSError(
+                                domain: "Download", code: -4,
+                                userInfo: [NSLocalizedDescriptionKey: L("download.error.no_space")]
+                            ))
+                            await self.pumpQueue()
+                        }
+                        return
+                    }
+                    if let resumeData {
+                        DownloadStorage.saveResumeData(resumeData, forId: id)
+                        downloadLog.info("system-cancel id=\(id, privacy: .public) — resume data saklandı, kuyruğa geri alındı")
+                        Task {
+                            await self.requeueAfterError(id: id, errorMessage: error.localizedDescription, preserveProgress: true)
+                            await self.pumpQueue()
+                        }
+                    }
                     return
+                }
+                // Disk dolu hatası retry ile düzelmez — 3 kez baştan indirmeye çalışmak
+                // gigabaytlarca boşa trafik demek. Doğrudan failed işaretle.
+                let isDiskFull = (ns.domain == NSCocoaErrorDomain && ns.code == NSFileWriteOutOfSpaceError)
+                    || (ns.domain == NSPOSIXErrorDomain && ns.code == Int(ENOSPC))
+                if isDiskFull {
+                    self.autoRetryCountById.removeValue(forKey: id)
+                    if let resumeData {
+                        DownloadStorage.saveResumeData(resumeData, forId: id)
+                    }
+                    Task {
+                        await self.markFailed(id: id, error: NSError(
+                            domain: "Download", code: -4,
+                            userInfo: [NSLocalizedDescriptionKey: L("download.error.no_space")]
+                        ))
+                        await self.pumpQueue()
+                    }
+                    return
+                }
+                // Persist resume data so the retry (or a later manual retry) resumes
+                // from the downloaded prefix instead of restarting the whole file.
+                if let resumeData {
+                    DownloadStorage.saveResumeData(resumeData, forId: id)
                 }
                 let attempts = (self.autoRetryCountById[id] ?? 0) + 1
                 self.autoRetryCountById[id] = attempts
                 if attempts <= Self.maxAutoRetries {
-                    downloadLog.info("retry id=\(id, privacy: .public) attempt=\(attempts) — kuyruğun sonuna eklendi: \(error.localizedDescription, privacy: .public)")
+                    downloadLog.info("retry id=\(id, privacy: .public) attempt=\(attempts) resume=\(resumeData != nil) — kuyruğun sonuna eklendi: \(error.localizedDescription, privacy: .public)")
                     Task {
-                        await self.requeueAfterError(id: id, errorMessage: error.localizedDescription)
+                        await self.requeueAfterError(id: id, errorMessage: error.localizedDescription, preserveProgress: resumeData != nil)
                         await self.pumpQueue()
                     }
                 } else {
@@ -620,19 +758,43 @@ extension DownloadManager: URLSessionDownloadDelegate {
 
     /// Hata alan bir indirmeyi kuyruğun sonuna geri koyar. `createdAt` güncellenir ki
     /// diğer bekleyenler bloklanmasın.
-    private func requeueAfterError(id: String, errorMessage: String) async {
+    /// `preserveProgress`: resume data saklandıysa true — byte sayaçları korunur ki
+    /// UI "kaldığı yerden devam edecek" durumunu doğru göstersin.
+    private func requeueAfterError(id: String, errorMessage: String, preserveProgress: Bool = false) async {
         _ = try? await AppDatabase.shared.write { db in
             if var row = try DBDownloadedItem.filter(Column("id") == id).fetchOne(db) {
                 row.status = DownloadStatus.queued.rawValue
                 row.errorMessage = errorMessage
-                row.totalBytes = 0
-                row.downloadedBytes = 0
+                if !preserveProgress {
+                    row.totalBytes = 0
+                    row.downloadedBytes = 0
+                }
                 row.createdAt = Date()
                 try row.update(db)
             }
         }
         progress.removeValue(forKey: id)
         dbVersion &+= 1
+    }
+
+    /// Relaunch sonrası eşleşmesiz gelen delegate hatasındaki resume data'yı, URL üzerinden
+    /// DB row'una bağlar ve row'u kuyruğa geri alır. Best-effort: eşleşme yoksa sessizce düşer.
+    private func adoptOrphanResumeData(_ data: Data, remoteURL: String) async {
+        let row: DBDownloadedItem? = try? await AppDatabase.shared.read { db in
+            try DBDownloadedItem
+                .filter(Column("remoteURL") == remoteURL)
+                .filter([DownloadStatus.downloading.rawValue, DownloadStatus.queued.rawValue].contains(Column("status")))
+                .fetchOne(db)
+        }
+        guard let row else { return }
+        // Skip if an in-memory task is already re-downloading this item.
+        guard idToTask[row.id] == nil else { return }
+        DownloadStorage.saveResumeData(data, forId: row.id)
+        downloadLog.info("adopt-resume id=\(row.id, privacy: .public) — relaunch sonrası resume data kurtarıldı")
+        if row.downloadStatus == .downloading {
+            await requeueAfterError(id: row.id, errorMessage: "Interrupted", preserveProgress: true)
+        }
+        await pumpQueue()
     }
 
     private func markCompleted(id: String, fallbackSize: Int64 = 0) async {
@@ -670,6 +832,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
                 try r.update(db)
             }
         }
+        DownloadStorage.removeResumeData(forId: id)
         progress.removeValue(forKey: id)
         dbVersion &+= 1
     }

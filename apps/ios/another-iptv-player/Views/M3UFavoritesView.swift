@@ -1,6 +1,9 @@
 import SwiftUI
 
 /// M3U favorileri grid görünümü. `M3UFavoriteStore` üstünden reaktif günceller.
+///
+/// 310K+ kanallık kataloglarda body başına tam liste taraması yapmamak için favori ve
+/// arama sonuçları @State'te tutulur, `.task(id:)` ile (debounce'lu) yeniden hesaplanır.
 struct M3UFavoritesView: View {
     let playlist: Playlist
 
@@ -9,16 +12,14 @@ struct M3UFavoritesView: View {
     @EnvironmentObject private var playerOverlay: PlayerOverlayController
 
     @State private var searchText = ""
+    @State private var debouncedQuery = ""
+    @State private var debounceTask: Task<Void, Never>?
+    @State private var favoriteChannels: [DBM3UChannel] = []
+    @State private var filtered: [DBM3UChannel] = []
 
-    private var favoriteChannels: [DBM3UChannel] {
-        // Sıralama: DB'deki kanal listesindeki orijinal sıra (sortIndex) korunur.
-        store.channels.filter { favorites.isFavorite(channelId: $0.id) }
-    }
-
-    private var filtered: [DBM3UChannel] {
-        let q = searchText.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return favoriteChannels }
-        return favoriteChannels.filter { CatalogTextSearch.matches(search: q, text: $0.name) }
+    /// Favori kümesi veya katalog değişince yeniden hesaplama tetiği.
+    private var recomputeKey: String {
+        "\(favorites.favoriteIds.count)-\(favorites.favoriteIds.hashValue)-\(store.channels.count)-\(debouncedQuery)"
     }
 
     var body: some View {
@@ -42,9 +43,41 @@ struct M3UFavoritesView: View {
             }
         }
         .searchable(text: $searchText, prompt: L("favorites.search_placeholder"))
+        .onChange(of: searchText) { _, new in
+            debounceTask?.cancel()
+            let trimmed = new.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty {
+                debouncedQuery = ""
+                return
+            }
+            debounceTask = Task {
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                guard !Task.isCancelled else { return }
+                await MainActor.run { debouncedQuery = new }
+            }
+        }
+        .task(id: recomputeKey) { await recompute() }
+        .onDisappear { debounceTask?.cancel(); debounceTask = nil }
         .navigationTitle(L("favorites.title"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
+    }
+
+    private func recompute() async {
+        let channels = store.channels
+        let ids = favorites.favoriteIds
+        let q = debouncedQuery.trimmingCharacters(in: .whitespaces)
+        let result = await Task.detached(priority: .userInitiated) { () -> ([DBM3UChannel], [DBM3UChannel]) in
+            // Sıralama: DB'deki kanal listesindeki orijinal sıra (sortIndex) korunur.
+            let favs = channels.filter { ids.contains($0.id) }
+            let filteredList = q.isEmpty
+                ? favs
+                : favs.filter { CatalogTextSearch.matches(search: q, text: $0.name) }
+            return (favs, filteredList)
+        }.value
+        guard !Task.isCancelled else { return }
+        favoriteChannels = result.0
+        filtered = result.1
     }
 
     private func present(_ channel: DBM3UChannel) {

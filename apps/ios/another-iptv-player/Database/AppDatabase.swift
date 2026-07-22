@@ -317,6 +317,35 @@ struct AppDatabase {
             )
         }
 
+        // Sezon/bölüm PK'ları playlist kapsamına alındı (bkz. DBSeason.scopedId): eski
+        // çıplak "\(seriesId)_\(seasonNum)" anahtarlı satırlar playlist'ler arası REPLACE
+        // çakışması taşıyor. Temizle ve seasonsLoaded'ı sıfırla — sezonlar ilk açılışta
+        // panelden yeniden çekilir; izleme geçmişi (panel episodeId ile) etkilenmez.
+        migrator.registerMigration("scopeSeasonEpisodeIdsByPlaylist") { db in
+            try db.execute(sql: "DELETE FROM episode")
+            try db.execute(sql: "DELETE FROM season")
+            try db.execute(sql: "UPDATE series SET seasonsLoaded = 0")
+        }
+
+        // SQLite FK child kolonlarını otomatik indekslemez. season/episode cascade FK'leri
+        // indekssiz kalınca her series silmesi tüm season tablosunu, her season silmesi tüm
+        // episode tablosunu tarıyordu (refresh ve playlist silme O(n²)). EpisodesRequest'in
+        // seasonId filtresi de aynı indeksi kullanır.
+        migrator.registerMigration("addSeasonEpisodeFKIndexes") { db in
+            try db.create(
+                index: "idx_season_series_playlist",
+                on: "season",
+                columns: ["seriesId", "playlistId"],
+                ifNotExists: true
+            )
+            try db.create(
+                index: "idx_episode_seasonId",
+                on: "episode",
+                columns: ["seasonId"],
+                ifNotExists: true
+            )
+        }
+
         return migrator
     }
 }

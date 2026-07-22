@@ -15,6 +15,9 @@ struct DownloadsView: View {
     @State private var debounceTask: Task<Void, Never>?
     @State private var pendingMovieDetail: DBVODStream?
     @State private var pendingSeriesDetail: DBSeries?
+    /// "Tamamlandı" görünen ama dosyası diskte olmayan kayıt (cihaz geri yükleme sonrası
+    /// tipik durum — Downloads klasörü yedeğe girmez). Alert ile yeniden indirme önerilir.
+    @State private var missingFileItem: DBDownloadedItem?
 
     init(playlist: Playlist) {
         self.playlist = playlist
@@ -133,6 +136,42 @@ struct DownloadsView: View {
         }
         .navigationDestination(item: $pendingSeriesDetail) { series in
             SeriesDetailView(playlist: playlist, series: series)
+        }
+        .alert(
+            L("download.missing_file.title"),
+            isPresented: Binding(
+                get: { missingFileItem != nil },
+                set: { if !$0 { missingFileItem = nil } }
+            ),
+            presenting: missingFileItem
+        ) { item in
+            Button(L("download.retry")) {
+                redownload(item)
+            }
+            Button(L("common.cancel"), role: .cancel) {}
+        } message: { _ in
+            Text(L("download.missing_file.message"))
+        }
+    }
+
+    /// Dosyası kaybolmuş kaydı aynı id ile yeniden kuyruğa alır (failed retry ile aynı yol).
+    private func redownload(_ item: DBDownloadedItem) {
+        guard let url = URL(string: item.remoteURL) else { return }
+        Task {
+            await manager.enqueue(
+                id: item.id,
+                playlistId: item.playlistId,
+                streamId: item.streamId,
+                type: item.type,
+                title: item.title,
+                secondaryTitle: item.secondaryTitle,
+                imageURL: item.imageURL,
+                remoteURL: url,
+                containerExtension: item.containerExtension,
+                seriesId: item.seriesId,
+                seasonNumber: item.seasonNumber,
+                episodeNumber: item.episodeNumber
+            )
         }
     }
 
@@ -283,7 +322,12 @@ struct DownloadsView: View {
     private func play(_ item: DBDownloadedItem) {
         Task {
             guard let localURL = try? DownloadStorage.absoluteURL(forRelativePath: item.localPath),
-                  FileManager.default.fileExists(atPath: localURL.path) else { return }
+                  FileManager.default.fileExists(atPath: localURL.path) else {
+                // Sessizce yutma: satır "tamamlandı" görünürken hiçbir şey olmaması
+                // kullanıcıya donmuş gibi gelir. Alert + yeniden indirme yolu sun.
+                await MainActor.run { missingFileItem = item }
+                return
+            }
 
             // Bölüm ise history.type "series", film ise "vod" olarak DB'de saklanır.
             let historyType = item.type == "episode" ? "series" : "vod"

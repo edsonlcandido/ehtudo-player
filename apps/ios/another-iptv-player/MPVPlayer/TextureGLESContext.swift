@@ -17,21 +17,23 @@ public final class TextureGLESContext {
     self.context = context
 
     for _ in 0 ... 3 {
-      let pixelBuffer = OpenGLESHelpers.createPixelBuffer(size)
-      let texture = OpenGLESHelpers.createTexture(
+      guard let pixelBuffer = OpenGLESHelpers.createPixelBuffer(size) else { continue }
+      guard let texture = OpenGLESHelpers.createTexture(
         textureCache,
         pixelBuffer,
         size
-      )
-      let frameBuffer = try? OpenGLESHelpers.createFrameBuffer(
+      ) else {
+        OpenGLESHelpers.deletePixeBuffer(context, pixelBuffer)
+        continue
+      }
+      if let frameBuffer = try? OpenGLESHelpers.createFrameBuffer(
         context: context,
         texture: texture,
         size: size
-      )
-      if frameBuffer != nil {
+      ) {
         self.pixelBuffer = pixelBuffer
         self.texture = texture
-        self.frameBuffer = frameBuffer!
+        self.frameBuffer = frameBuffer
         return
       }
       OpenGLESHelpers.deletePixeBuffer(context, pixelBuffer)

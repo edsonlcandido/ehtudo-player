@@ -31,22 +31,27 @@ struct CategoryPickerSheet: View {
         return hiddenStore.hiddenIds(playlistId: pid, type: t)
     }
 
-    private var filtered: [Entry] {
+    /// Tek geçişte filtrele + gizli/görünür ayır. `visibleEntries`/`hiddenEntries`
+    /// computed'larını body içinde ayrı ayrı okumak, her tuş vuruşunda tüm listeyi
+    /// iki kez normalize edip tarıyordu (binlerce M3U grubunda görünür takılma).
+    private func partitionedEntries() -> (visible: [Entry], hidden: [Entry]) {
         let q = query.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return entries }
-        return entries.filter { CatalogTextSearch.matches(search: q, text: $0.name) }
-    }
-
-    private var visibleEntries: [Entry] {
-        filtered.filter { !hiddenIds.contains($0.id) }
-    }
-
-    private var hiddenEntries: [Entry] {
-        guard hidingEnabled else { return [] }
-        return filtered.filter { hiddenIds.contains($0.id) }
+        let ids = hiddenIds
+        var visible: [Entry] = []
+        var hidden: [Entry] = []
+        for entry in entries {
+            if !q.isEmpty, !CatalogTextSearch.matches(search: q, text: entry.name) { continue }
+            if hidingEnabled, ids.contains(entry.id) {
+                hidden.append(entry)
+            } else {
+                visible.append(entry)
+            }
+        }
+        return (visible, hidden)
     }
 
     var body: some View {
+        let (visibleEntries, hiddenEntries) = partitionedEntries()
         NavigationStack {
             Group {
                 if visibleEntries.isEmpty && hiddenEntries.isEmpty {

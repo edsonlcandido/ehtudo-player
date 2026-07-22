@@ -34,8 +34,10 @@ enum PlaybackTrackPreferences {
       s.audioLang = lang
       s.audioTitleFallback = nil
     } else {
+      // Sentetik ("Parça N") başlık saklanmaz: pozisyon bazlı olduğundan sonraki
+      // videoda alakasız bir parçayı otomatik seçtirir.
       s.audioLang = nil
-      s.audioTitleFallback = normalizeTitleToken(option.title)
+      s.audioTitleFallback = option.isSyntheticTitle ? nil : normalizeTitleToken(option.title)
     }
     save(s)
   }
@@ -50,7 +52,7 @@ enum PlaybackTrackPreferences {
       s.subtitleTitleFallback = nil
     } else {
       s.subtitleLang = nil
-      s.subtitleTitleFallback = normalizeTitleToken(option.title)
+      s.subtitleTitleFallback = option.isSyntheticTitle ? nil : normalizeTitleToken(option.title)
     }
     save(s)
   }
@@ -62,7 +64,7 @@ enum PlaybackTrackPreferences {
       s.videoTitleFallback = nil
     } else {
       s.videoLang = nil
-      s.videoTitleFallback = normalizeTitleToken(option.title)
+      s.videoTitleFallback = option.isSyntheticTitle ? nil : normalizeTitleToken(option.title)
     }
     save(s)
   }
@@ -125,14 +127,30 @@ enum PlaybackTrackPreferences {
     return s.isEmpty ? nil : s
   }
 
+  /// ISO 639-1 (2 harf) → 639-2/B+T (3 harf) eşdeğerleri. Kör 2 harf prefix
+  /// karşılaştırması "por/pol", "tur/tuk", "slv/slk", "rus/run", "fra/fry" gibi alakasız
+  /// dilleri eşleştirip her videoda yanlış ses/altyazı seçiyordu.
+  private static let iso639Equivalents: [String: Set<String>] = [
+    "en": ["eng"], "tr": ["tur"], "ar": ["ara"], "de": ["deu", "ger"],
+    "es": ["spa"], "fr": ["fra", "fre"], "hi": ["hin"], "pt": ["por", "pob"],
+    "ru": ["rus"], "zh": ["zho", "chi"], "it": ["ita"], "nl": ["nld", "dut"],
+    "pl": ["pol"], "sv": ["swe"], "no": ["nor", "nob", "nno"], "da": ["dan"],
+    "fi": ["fin"], "el": ["ell", "gre"], "he": ["heb"], "ja": ["jpn"],
+    "ko": ["kor"], "cs": ["ces", "cze"], "sk": ["slk", "slo"], "sl": ["slv"],
+    "hu": ["hun"], "ro": ["ron", "rum"], "bg": ["bul"], "sr": ["srp"],
+    "hr": ["hrv"], "uk": ["ukr"], "fa": ["fas", "per"], "ur": ["urd"],
+    "th": ["tha"], "vi": ["vie"], "id": ["ind"], "ms": ["msa", "may"],
+    "az": ["aze"], "kk": ["kaz"], "sq": ["sqi", "alb"], "bs": ["bos"],
+    "mk": ["mkd", "mac"], "ku": ["kur"],
+  ]
+
   static func langMatches(stored: String, trackLang: String?) -> Bool {
     guard let t = normalizeLang(trackLang) else { return false }
     let s = normalizeLang(stored) ?? stored.lowercased()
     if t == s { return true }
-    if t.hasPrefix(s) || s.hasPrefix(t) { return true }
-    let s2 = String(s.prefix(2))
-    let t2 = String(t.prefix(2))
-    if s2.count == 2, t2.count == 2, s2 == t2 { return true }
+    // 2↔3 harf eşdeğerliği yalnız açık tablo üzerinden — prefix sezgisi yok.
+    if let eq = iso639Equivalents[s], eq.contains(t) { return true }
+    if let eq = iso639Equivalents[t], eq.contains(s) { return true }
     return false
   }
 

@@ -17,13 +17,19 @@ public final class TextureHW: NSObject, ResizableTextureProtocol {
     skipCheckArgs: true
   )
 
-  init(
+  init?(
     handle: OpaquePointer,
     updateCallback: @escaping UpdateCallback
   ) {
     self.handle = handle
-    self.context = OpenGLESHelpers.createContext()
-    self.textureCache = OpenGLESHelpers.createTextureCache(context)
+    // GL bağlamı/doku önbelleği kurulamıyorsa (bellek baskısı, GPU durumu) crash yerine
+    // nil dön — NativeVideoOutput yazılım render'ına düşer.
+    guard let context = OpenGLESHelpers.createContext(),
+          let textureCache = OpenGLESHelpers.createTextureCache(context) else {
+      return nil
+    }
+    self.context = context
+    self.textureCache = textureCache
     self.coalescer = UpdateCoalescer(callback: updateCallback)
     super.init()
     self.initMPV()
@@ -63,23 +69,22 @@ public final class TextureHW: NSObject, ResizableTextureProtocol {
       get_proc_address_ctx: nil
     )
 
-    var params: [mpv_render_param] = withUnsafeMutableBytes(of: &procAddress) {
-      procAddress in
-      [
+    // procAddress pointer'ı closure dışına taşınamaz (Swift UB); create çağrısı
+    // pointer'ı üreten closure'ın İÇİNDE yapılır.
+    let createStatus: Int32 = withUnsafeMutableBytes(of: &procAddress) { procBytes in
+      var params: [mpv_render_param] = [
         mpv_render_param(type: MPV_RENDER_PARAM_API_TYPE, data: api),
         mpv_render_param(
           type: MPV_RENDER_PARAM_OPENGL_INIT_PARAMS,
-          data: procAddress.baseAddress.map {
+          data: procBytes.baseAddress.map {
             UnsafeMutableRawPointer($0)
           }
         ),
         mpv_render_param(),
       ]
+      return mpv_render_context_create(&renderContext, handle, &params)
     }
-
-    MPVHelpers.checkError(
-      mpv_render_context_create(&renderContext, handle, &params)
-    )
+    MPVHelpers.checkError(createStatus)
 
     mpv_render_context_set_update_callback(
       renderContext,
@@ -103,10 +108,15 @@ public final class TextureHW: NSObject, ResizableTextureProtocol {
     renderContext = nil
   }
 
+  /// Resize sonrası ilk render'da FRAME bayrağı gelmese de çizim zorlanır — yeni
+  /// boyuttaki FBO'lara son karenin basılması gerekir.
+  private var forceNextRender = false
+
   public func resize(_ size: CGSize) {
     if size.width == 0 || size.height == 0 { return }
     Log.info("TextureHW", "resize: \(size.width)x\(size.height)")
     createPixelBuffer(size)
+    forceNextRender = true
   }
 
   private func createPixelBuffer(_ size: CGSize) {
@@ -114,15 +124,17 @@ public final class TextureHW: NSObject, ResizableTextureProtocol {
     // Eski boyuttan kalan stale texture cache entry'leri temizle; bu olmadan yeniden
     // boyutlandırma sırasında renk bozulması oluşabilir.
     CVOpenGLESTextureCacheFlush(textureCache, 0)
-    let contexts = (0 ..< 3).compactMap { _ in
+    // 4 buffer: swap zincirindeki cooling yuvası bir buffer'ı geçici alıkoyduğu için
+    // üçlü tampon + 1 — aksi halde havuz sık sık boşalıp kare atlanır.
+    let contexts = (0 ..< 4).compactMap { _ in
       TextureGLESContext(context: context, textureCache: textureCache, size: size)
     }
     if contexts.isEmpty {
       Log.error("TextureHW", "createPixelBuffer: hiç TextureGLESContext oluşturulamadı (\(Int(size.width))x\(Int(size.height)))")
       return
     }
-    if contexts.count < 3 {
-      Log.error("TextureHW", "createPixelBuffer: \(contexts.count)/3 context oluşturulabildi")
+    if contexts.count < 4 {
+      Log.error("TextureHW", "createPixelBuffer: \(contexts.count)/4 context oluşturulabildi")
     }
     textureContexts.reinit(objects: contexts, skipCheckArgs: true)
   }
@@ -136,6 +148,13 @@ public final class TextureHW: NSObject, ResizableTextureProtocol {
       MPVPlayerVideoLog.throttled("TextureHW.render", first: 5, every: 0) { "renderContext nil" }
       return
     }
+    // Yeni kare yoksa (update callback'i property değişimleri de tetikler) FBO ve GL
+    // turu harcama; resize sonrası ilk çizim forceNextRender ile garanti edilir.
+    let updateFlags = mpv_render_context_update(rctx)
+    if updateFlags & UInt64(MPV_RENDER_UPDATE_FRAME.rawValue) == 0, !forceNextRender {
+      return
+    }
+    forceNextRender = false
     guard let textureContext = textureContexts.nextAvailable() else {
       MPVPlayerVideoLog.always(
         "TextureHW.render",
@@ -167,15 +186,15 @@ public final class TextureHW: NSObject, ResizableTextureProtocol {
       h: h,
       internal_format: 0
     )
-    let fboPtr = withUnsafeMutablePointer(to: &fbo) { $0 }
 
-    var params: [mpv_render_param] = [
-      mpv_render_param(type: MPV_RENDER_PARAM_OPENGL_FBO, data: fboPtr),
-      mpv_render_param(type: MPV_RENDER_PARAM_INVALID, data: nil),
-    ]
-
-    let updateFlags = mpv_render_context_update(rctx)
-    let renderErr = mpv_render_context_render(rctx, &params)
+    // fbo pointer'ı closure gövdesi dışına taşınamaz (Swift UB); render çağrısı içeride.
+    let renderErr: Int32 = withUnsafeMutablePointer(to: &fbo) { fboPtr in
+      var params: [mpv_render_param] = [
+        mpv_render_param(type: MPV_RENDER_PARAM_OPENGL_FBO, data: fboPtr),
+        mpv_render_param(type: MPV_RENDER_PARAM_INVALID, data: nil),
+      ]
+      return mpv_render_context_render(rctx, &params)
+    }
     if renderErr < 0 {
       MPVPlayerVideoLog.always(
         "TextureHW.render",

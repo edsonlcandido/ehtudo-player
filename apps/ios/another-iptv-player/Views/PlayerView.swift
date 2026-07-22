@@ -138,7 +138,6 @@ private struct PlayerViewImpl: View {
     var onLiveChannelBrowserClosed: () -> Void
 
     @StateObject private var player = VideoPlayerController()
-    @StateObject private var subtitleManager = SubtitleManager()
     @StateObject private var systemVolumeBridge = SystemVolumeBridge()
 
     @Environment(\.dismiss) private var dismiss
@@ -155,6 +154,7 @@ private struct PlayerViewImpl: View {
     @AppStorage("player.pipEnabled") private var pipEnabled = true
     @AppStorage("player.continuePlayingInBackground") private var continuePlayingInBackground = true
     @AppStorage("player.speedUpOnLongPress") private var speedUpOnLongPress = true
+    @AppStorage("player.autoPlayNextEpisode") private var autoPlayNextEpisode = true
 
     @State private var isScrubbing = false
     @State private var scrubValue: Double = 0
@@ -167,6 +167,13 @@ private struct PlayerViewImpl: View {
     @State private var bitrateSamples: [(time: Date, bps: Double)] = []
     @State private var aspectToastText: String?
     @State private var aspectToastToken: UInt64 = 0
+
+    /// Dizi bölümü bitince sonraki bölüme otomatik geçiş geri sayımı. Token, iptal sonrası
+    /// gecikmiş tick'lerin sayacı yeniden canlandırmasını engeller; `handled` bayrağı kullanıcı
+    /// iptal ettiğinde aynı `.ended` durumu için sayacın tekrar başlamasını önler.
+    @State private var autoAdvanceSecondsRemaining: Int?
+    @State private var autoAdvanceToken: UInt64 = 0
+    @State private var autoAdvanceHandledForCurrentEnd = false
 
     /// Tam ekran kapak: kenardan geri (pop) ve aşağı çekerek kapatma.
     private enum InteractiveDismissAxis {
@@ -202,7 +209,6 @@ private struct PlayerViewImpl: View {
     @State private var appliedPlaybackIdentity: String?
     /// Altyazı `update()` binary search + eşitlik kontrolü yapıyor, ama yine de her 120ms
     /// tetiklemek onChange closure kadar küçük bir yük. 200ms pencere imperceptible.
-    @State private var lastSubtitleUpdateMs: Int64 = 0
 
     private let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "another-iptv-player", category: "Playback")
 
@@ -476,6 +482,7 @@ private struct PlayerViewImpl: View {
             }
         }
         .onChange(of: playbackIdentity) { _, _ in
+            cancelAutoAdvanceCountdown(resetEndHandling: true)
             applyPlaybackTransitionIfNeeded()
         }
         .onChange(of: videoAspectModeRaw) { _, _ in
@@ -494,15 +501,6 @@ private struct PlayerViewImpl: View {
                 return
             }
         }
-        .onChange(of: player.timeMs) { _, newTime in
-            // 200ms throttle: altyazı cue'ları tipik olarak saniyeler sürer, 120ms → 200ms fark edilmez.
-            // Geriye doğru seek (scrub) durumunda anında güncelle.
-            let delta = newTime - lastSubtitleUpdateMs
-            if delta >= 200 || delta < 0 {
-                lastSubtitleUpdateMs = newTime
-                subtitleManager.update(currentTime: Double(newTime) / 1000.0)
-            }
-        }
         .onChange(of: playbackPresentationKey) { _, _ in
             player.setPlaybackPresentation(
                 PlaybackPresentation(title: title, subtitle: subtitle,
@@ -512,7 +510,9 @@ private struct PlayerViewImpl: View {
         .onDisappear {
             timer?.invalidate()
             saveHistoryTimer?.invalidate()
-            saveWatchHistory()
+            // Save under the applied playback identity, not the (possibly newer)
+            // incoming props — mirrors the timer path above.
+            saveWatchHistory(tags: historySaveTags)
             player.teardown()
         }
         .sheet(isPresented: $showTrackSettings) {
@@ -538,8 +538,64 @@ private struct PlayerViewImpl: View {
         .onChange(of: player.videoBitrate) { _, newValue in
             appendBitrateSample(newValue)
         }
+        .onChange(of: player.state) { _, newState in
+            if newState == .ended {
+                startAutoAdvanceCountdownIfEligible()
+            } else {
+                cancelAutoAdvanceCountdown(resetEndHandling: true)
+            }
+        }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Otomatik geçiş yalnız dizilerde ve gerçekten gidilecek bir sonraki bölüm varken.
+    private var isAutoAdvanceEligible: Bool {
+        autoPlayNextEpisode && type == "series" && !isLiveStream
+            && canGoToNextEpisode && onNextEpisode != nil
+    }
+
+    private func startAutoAdvanceCountdownIfEligible() {
+        guard isAutoAdvanceEligible, !autoAdvanceHandledForCurrentEnd,
+              autoAdvanceSecondsRemaining == nil else { return }
+        autoAdvanceHandledForCurrentEnd = true
+        autoAdvanceToken &+= 1
+        let token = autoAdvanceToken
+        withAnimation(.easeOut(duration: 0.25)) {
+            autoAdvanceSecondsRemaining = 5
+        }
+        scheduleAutoAdvanceTick(token: token)
+    }
+
+    private func scheduleAutoAdvanceTick(token: UInt64) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            guard token == autoAdvanceToken,
+                  let remaining = autoAdvanceSecondsRemaining else { return }
+            if remaining <= 1 {
+                triggerAutoAdvance()
+            } else {
+                autoAdvanceSecondsRemaining = remaining - 1
+                scheduleAutoAdvanceTick(token: token)
+            }
+        }
+    }
+
+    private func triggerAutoAdvance() {
+        autoAdvanceToken &+= 1
+        withAnimation(.easeOut(duration: 0.2)) {
+            autoAdvanceSecondsRemaining = nil
+        }
+        onNextEpisode?()
+    }
+
+    private func cancelAutoAdvanceCountdown(resetEndHandling: Bool = false) {
+        autoAdvanceToken &+= 1
+        if autoAdvanceSecondsRemaining != nil {
+            withAnimation(.easeOut(duration: 0.2)) {
+                autoAdvanceSecondsRemaining = nil
+            }
+        }
+        if resetEndHandling { autoAdvanceHandledForCurrentEnd = false }
     }
 
     private func applySeriesEpisodeRemoteCommands() {
@@ -593,7 +649,6 @@ private struct PlayerViewImpl: View {
         videoPinchBase = 1
         videoPinchLive = 1
         videoPanCommitted = .zero
-        subtitleManager.reset()
 
         log.info("Load playback: \(self.playbackIdentity, privacy: .public)")
         player.setImportedSubtitleContext(
@@ -627,7 +682,13 @@ private struct PlayerViewImpl: View {
     private func startSaveHistoryTimer() {
         saveHistoryTimer?.invalidate()
         saveHistoryTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
-            if player.isPlaying { saveWatchHistory() }
+            // The closure captures the view struct from onAppear, freezing plain props
+            // (streamId, title, …) at first render. historySaveTags is @State, so it
+            // stays live across in-place episode switches — without it, episode 2's
+            // position would be written into episode 1's history row.
+            if player.isPlaying, let tags = historySaveTags {
+                saveWatchHistory(tags: tags)
+            }
         }
     }
 
@@ -887,9 +948,6 @@ private struct PlayerViewImpl: View {
                         continuePlayingInBackground: continuePlayingInBackground
                     )
                     .id("MPVPlaybackPiP")
-
-                    SubtitleOverlayView(text: subtitleManager.currentSubtitle)
-                        .allowsHitTesting(false)
                 }
                 .frame(width: fittedSize.width, height: fittedSize.height)
                 .scaleEffect(videoZoomScale, anchor: .center)
@@ -981,6 +1039,21 @@ private struct PlayerViewImpl: View {
                     .zIndex(32)
                 }
 
+                // Kontroller gizliyken de yükleme/buffering geri bildirimi: yavaş panel
+                // açılışında 5 sn sonra kontroller kaybolunca kullanıcı simsiyah ekranla
+                // baş başa kalıyordu. Kontroller açıkken ortadaki buton zaten spinner
+                // gösterdiği için burada yalnızca !showControls durumunda çizilir.
+                if isCenterTransportLoading && !showControls {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(.white)
+                        .scaleEffect(1.4)
+                        .padding(18)
+                        .background(.black.opacity(0.35), in: Circle())
+                        .allowsHitTesting(false)
+                        .zIndex(25)
+                }
+
                 if showControls && showDebugOverlay {
                     // Debug panel top-trailing, volume slider'ın ÜSTÜNDE render edilir
                     // (zIndex slider'dan yüksek). topChrome'un altında, sağda ses slider'ını
@@ -1039,6 +1112,47 @@ private struct PlayerViewImpl: View {
                     .allowsHitTesting(false)
                 }
 
+                if let seconds = autoAdvanceSecondsRemaining {
+                    HStack(spacing: 10) {
+                        Button {
+                            cancelAutoAdvanceCountdown()
+                        } label: {
+                            Text(L("common.cancel"))
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(.ultraThinMaterial, in: Capsule())
+                                .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
+                        }
+
+                        Button {
+                            triggerAutoAdvance()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "play.fill")
+                                    .font(.footnote.weight(.bold))
+                                Text(L("player.autonext.countdown", seconds))
+                            }
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(.white, in: Capsule())
+                        }
+                    }
+                    .shadow(color: .black.opacity(0.28), radius: 12, y: 4)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .padding(.trailing, 16 + outerSafeAreaInsets.trailing)
+                    .padding(.bottom, (showControls ? 92 : 16) + outerSafeAreaInsets.bottom)
+                    // Krom görünürlüğü animasyonsuz (Transaction.disablesAnimations)
+                    // değişebildiği için padding'i kendi animasyonuyla sür — kullanıcı
+                    // "İptal"e uzanırken butonlar 76pt ışınlanıyordu.
+                    .animation(.easeInOut(duration: 0.2), value: showControls)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .zIndex(41)
+                }
+
                 // Not: PiP placeholder UI kaldırıldı — sistem `AVPictureInPictureController`
                 // kendi "playing in picture in picture" mesajını otomatik gösteriyor.
 
@@ -1062,7 +1176,9 @@ private struct PlayerViewImpl: View {
                     .zIndex(10)
                 }
 
-                if showControls && hasPlaybackFailure, let msg = player.playbackFailureMessage {
+                // Hata banner'ı krom görünürlüğünden bağımsız: 5 sn auto-hide sonrası
+                // patlayan yayında kullanıcı sessiz siyah ekranla kalmasın.
+                if hasPlaybackFailure, let msg = player.playbackFailureMessage {
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "wifi.exclamationmark")
                             .font(.caption.weight(.bold))
@@ -1173,7 +1289,9 @@ private struct PlayerViewImpl: View {
         )
         let currentTime = Int(player.timeMs)
         let duration = Int(player.durationMs)
-        guard duration > 0 else { return }
+        // Canlı yayında mpv duration çoğunlukla 0 kalır; guard'ı canlıda atlamazsak
+        // "son izlenen kanallar" hiç dolmaz. VOD/dizide geçerli süre şartı sürer.
+        guard duration > 0 || resolvedTags.type == "live" else { return }
 
         let history = DBWatchHistory(
             id: "\(resolvedTags.playlistId)_\(resolvedTags.type)_\(resolvedTags.streamId)",
@@ -1206,6 +1324,7 @@ private struct PlayerViewImpl: View {
     private var topChrome: some View {
         HStack(alignment: .center, spacing: 12) {
             glassIconButton(systemName: "xmark", size: 44) { performPlayerDismiss() }
+                .accessibilityLabel(L("common.close"))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
@@ -1251,14 +1370,17 @@ private struct PlayerViewImpl: View {
                         guard canEnterPiPNow else { return }
                         pipManualSignal += 1
                     }
+                    .accessibilityLabel(L("player.a11y.pip"))
                 }
                 groupedCapsuleButton(systemName: "textformat.size") {
                     showSubtitleAppearance = true
                 }
+                .accessibilityLabel(L("player.a11y.subtitle_appearance"))
                 groupedCapsuleButton(systemName: "gearshape") {
                     player.updateTracks()
                     showTrackSettings = true
                 }
+                .accessibilityLabel(L("player.a11y.track_settings"))
             }
             .padding(.horizontal, 4)
             .background(.ultraThinMaterial, in: Capsule())
@@ -1283,7 +1405,7 @@ private struct PlayerViewImpl: View {
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.96))
                 .shadow(color: .black.opacity(0.25), radius: 2, y: 0.5)
-                .frame(width: 40, height: 40)
+                .frame(width: 44, height: 44)  // HIG minimum dokunma hedefi
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1311,6 +1433,7 @@ private struct PlayerViewImpl: View {
                     player.jump(seconds: -15)
                     UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
                 }
+                .accessibilityLabel(L("player.a11y.skip_back_15"))
                 .disabled(hasPlaybackFailure)
                 .opacity(hasPlaybackFailure ? 0.4 : 1)
             }
@@ -1326,6 +1449,7 @@ private struct PlayerViewImpl: View {
                     player.jump(seconds: 15)
                     UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
                 }
+                .accessibilityLabel(L("player.a11y.skip_forward_15"))
                 .disabled(hasPlaybackFailure)
                 .opacity(hasPlaybackFailure ? 0.4 : 1)
             }
@@ -1351,6 +1475,7 @@ private struct PlayerViewImpl: View {
                 ) {
                     player.togglePlayPause()
                 }
+                .accessibilityLabel(player.isPlaying ? L("player.a11y.pause") : L("player.a11y.play"))
                 .disabled(hasPlaybackFailure)
                 .opacity(hasPlaybackFailure ? 0.4 : 1)
             }
@@ -1389,12 +1514,14 @@ private struct PlayerViewImpl: View {
                         glassIconButton(systemName: "chevron.left.circle.fill", size: 44, symbolSize: 17) {
                             onPreviousChannel?()
                         }
+                        .accessibilityLabel(L("player.a11y.previous_channel"))
                         .disabled(!canGoToPreviousChannel)
                         .opacity(canGoToPreviousChannel ? 1 : 0.38)
 
                         glassIconButton(systemName: "chevron.right.circle.fill", size: 44, symbolSize: 17) {
                             onNextChannel?()
                         }
+                        .accessibilityLabel(L("player.a11y.next_channel"))
                         .disabled(!canGoToNextChannel)
                         .opacity(canGoToNextChannel ? 1 : 0.38)
                     }
@@ -1418,12 +1545,14 @@ private struct PlayerViewImpl: View {
                     glassIconButton(systemName: "backward.end.fill", size: 44, symbolSize: 17) {
                         onPreviousEpisode?()
                     }
+                    .accessibilityLabel(L("player.a11y.previous_episode"))
                     .disabled(!canGoToPreviousEpisode)
                     .opacity(canGoToPreviousEpisode ? 1 : 0.38)
 
                     glassIconButton(systemName: "forward.end.fill", size: 44, symbolSize: 17) {
                         onNextEpisode?()
                     }
+                    .accessibilityLabel(L("player.a11y.next_episode"))
                     .disabled(!canGoToNextEpisode)
                     .opacity(canGoToNextEpisode ? 1 : 0.38)
                 }
@@ -1436,12 +1565,14 @@ private struct PlayerViewImpl: View {
                     glassIconButton(systemName: "backward.end.fill", size: 44, symbolSize: 17) {
                         onPreviousChannel?()
                     }
+                    .accessibilityLabel(L("player.a11y.previous_item"))
                     .disabled(!canGoToPreviousChannel)
                     .opacity(canGoToPreviousChannel ? 1 : 0.38)
 
                     glassIconButton(systemName: "forward.end.fill", size: 44, symbolSize: 17) {
                         onNextChannel?()
                     }
+                    .accessibilityLabel(L("player.a11y.next_item"))
                     .disabled(!canGoToNextChannel)
                     .opacity(canGoToNextChannel ? 1 : 0.38)
                 }
@@ -1489,9 +1620,27 @@ private struct PlayerViewImpl: View {
                 },
                 onDragValue: { dragVal in
                     scrubValue = dragVal
+                    // Each drag tick postpones auto-hide; otherwise a >5 s scrub would
+                    // remove the timeline mid-gesture (drag cancelled, seek lost).
+                    resetTimer()
                 }
             )
             .layoutPriority(1)
+            // DragGesture VoiceOver altında erişilemez; kaydırıcıyı ayarlanabilir öğe
+            // olarak sun (yan parlaklık/ses slider'larıyla aynı desen). ±15 sn adım,
+            // mevcut goforward/gobackward.15 butonlarıyla tutarlı.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(L("player.a11y.playback_position"))
+            .accessibilityValue("\(formatMs(Int(player.timeMs))) / \(totalDurationLabel)")
+            .accessibilityAdjustableAction { direction in
+                guard effectiveSeekable else { return }
+                resetTimer()
+                switch direction {
+                case .increment: player.jump(seconds: 15)
+                case .decrement: player.jump(seconds: -15)
+                @unknown default: break
+                }
+            }
 
             Text(totalDurationLabel)
                 .font(.footnote.monospacedDigit().weight(.semibold))
@@ -1560,6 +1709,13 @@ private struct PlayerViewImpl: View {
     private func resetTimer() {
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) { _ in
+            // Never hide the chrome mid-scrub: removing the timeline cancels the drag
+            // without onEditingChanged(false), leaking isScrubbing=true and dropping
+            // the seek. A held-still thumb schedules no drag ticks, so guard here too.
+            guard !isScrubbing else {
+                resetTimer()
+                return
+            }
             showControls = false
         }
     }
@@ -1642,7 +1798,7 @@ struct LiveChannelBrowserScreen: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .navigationTitle("Kanallar")
+        .navigationTitle(L("dashboard.channels"))
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .toolbarBackground(.visible, for: .navigationBar)
@@ -1658,7 +1814,7 @@ struct LiveChannelBrowserScreen: View {
                 }
                 .tint(.white)
                 .buttonStyle(.plain)
-                .accessibilityLabel("Geri")
+                .accessibilityLabel(L("common.back"))
             }
         }
         .onAppear {

@@ -18,9 +18,10 @@ struct MPVPlayerDemoView: View {
     return String(format: "%d:%02d", m, r)
   }
 
-  /// Örnek HTTP akışı (mpv-player demo ile aynı URL).
+  /// Public sample stream (Apple HLS reference stream) — never point this at a
+  /// real IPTV panel; panel URLs embed account credentials.
   private let demoURL = URL(
-    string: "http://ss.54778553.xyz:8080/movie/FSR96/9G4E55/228315.mp4"
+    string: "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_hevc/master.m3u8"
   )!
 
   @StateObject private var player = MPVPlayer()

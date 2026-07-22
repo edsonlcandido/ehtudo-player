@@ -119,11 +119,13 @@ private final class MediaKitCenterPanel: UIView, UIGestureRecognizerDelegate {
     showTap.addTarget(self, action: #selector(showTapRecognized))
     showTap.numberOfTapsRequired = 1
     showTap.cancelsTouchesInView = false
+    showTap.delegate = self
     addGestureRecognizer(showTap)
 
     hideTap.addTarget(self, action: #selector(hideTapRecognized))
     hideTap.numberOfTapsRequired = 1
     hideTap.cancelsTouchesInView = false
+    hideTap.delegate = self
     addGestureRecognizer(hideTap)
 
     speedHold.addTarget(self, action: #selector(speedHoldRecognized(_:)))
@@ -145,6 +147,25 @@ private final class MediaKitCenterPanel: UIView, UIGestureRecognizerDelegate {
     showTap.isEnabled = !showControls && !isSpeedHoldActive
     hideTap.isEnabled = showControls && !isSpeedHoldActive
     speedHold.isEnabled = enableSpeedHold
+  }
+
+  /// Yan parlaklık/ses slider şeritleri (PlayerControlCenterStyleEdgeSliders, üstte
+  /// zIndex 32) ekranın sol/sağ kenarında durur. Bu panel tam ekran olduğu ve tüm
+  /// recognizer'lar cancelsTouchesInView=false çalıştığı için, slider'a dokunmak aynı
+  /// anda 2x hız basılı-tutmayı ve krom gizleme tap'ini de tetikliyordu. Kenar şeridinde
+  /// başlayan dokunuşları burada hiç alma. 110pt, PlayerView'daki pull-down bastırma
+  /// bölgesiyle aynı (interactiveDismissShouldSuppressPullDown).
+  private static let edgeSliderStripWidth: CGFloat = 110
+
+  func gestureRecognizer(
+    _ gestureRecognizer: UIGestureRecognizer,
+    shouldReceive touch: UITouch
+  ) -> Bool {
+    let x = touch.location(in: self).x
+    if x <= Self.edgeSliderStripWidth || x >= bounds.width - Self.edgeSliderStripWidth {
+      return false
+    }
+    return true
   }
 
   @objc private func showTapRecognized() {

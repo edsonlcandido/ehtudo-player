@@ -94,8 +94,15 @@ struct DBSeason: Identifiable, Codable, FetchableRecord, PersistableRecord, Equa
     var voteAverage: Double?
     var seriesId: Int
     var playlistId: UUID
-    
+
     static let databaseTableName = "season"
+
+    /// Playlist kapsamlı sezon PK'sı. Panel `seriesId`'leri paneller arası çakışır;
+    /// çıplak "\(seriesId)_\(seasonNum)" anahtarı iki playlist'in sezonlarını aynı
+    /// satıra REPLACE edip prev/next bölüm gezinmesini bozuyordu.
+    static func scopedId(playlistId: UUID, seriesId: Int, seasonNumber: Int) -> String {
+        "\(playlistId.uuidString)_\(seriesId)_\(seasonNumber)"
+    }
 }
 
 struct DBEpisode: Identifiable, Codable, FetchableRecord, PersistableRecord, Equatable, Hashable {
@@ -112,6 +119,12 @@ struct DBEpisode: Identifiable, Codable, FetchableRecord, PersistableRecord, Equ
     var seasonId: String
 
     static let databaseTableName = "episode"
+
+    /// Playlist kapsamlı bölüm PK'sı. `episodeId` (panel ham id'si) izleme geçmişi ve
+    /// indirme eşleştirmesi için AYNEN korunur; yalnız satır kimliği kapsamlanır.
+    static func scopedId(playlistId: UUID, panelEpisodeId: String?) -> String {
+        "\(playlistId.uuidString)_\(panelEpisodeId ?? UUID().uuidString)"
+    }
 }
 
 struct DBM3UFavorite: Codable, FetchableRecord, PersistableRecord, Equatable, Sendable {

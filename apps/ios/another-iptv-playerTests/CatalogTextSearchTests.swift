@@ -15,10 +15,26 @@ struct CatalogTextSearchTests {
 
     @Test
     func matchesIsDiacriticInsensitive() {
-        // "İstanbul" lower-folded with Turkish locale becomes "istanbul"
         #expect(CatalogTextSearch.matches(search: "istanbul", text: "İSTANBUL HABER") == true)
         #expect(CatalogTextSearch.matches(search: "sehir", text: "Şehir TV") == true)
         #expect(CatalogTextSearch.matches(search: "video", text: "VİDEO PLUS") == true)
+    }
+
+    @Test
+    func matchesUppercaseLatinIWithLowercaseQuery() {
+        // Regression: tr_TR lowercasing mapped "I"→"ı", so lowercase queries missed
+        // any ALL-CAPS name containing "I" ("HISTORY HD" → "hıstory hd").
+        #expect(CatalogTextSearch.matches(search: "history", text: "HISTORY HD") == true)
+        #expect(CatalogTextSearch.matches(search: "film", text: "FILM 4K") == true)
+        #expect(CatalogTextSearch.matches(search: "silicon", text: "SILICON VALLEY") == true)
+    }
+
+    @Test
+    func matchesTurkishDotlessIQueries() {
+        // Turkish dotless-ı queries must still match ALL-CAPS Turkish names.
+        #expect(CatalogTextSearch.matches(search: "ışık", text: "IŞIK TV") == true)
+        #expect(CatalogTextSearch.matches(search: "isik", text: "IŞIK TV") == true)
+        #expect(CatalogTextSearch.matches(search: "çılgın", text: "CILGIN DUNYA") == true)
     }
 
     @Test

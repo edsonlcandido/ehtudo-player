@@ -72,6 +72,11 @@ struct CachedImage: View {
                         placeholder
                     }
                 }
+                // Grid/raf profillerinde onDisappear davranışı YOK (bilinçli): .lowerPriority
+                // denendi ama geri kaydırılan hücrenin isteği .veryLow'da takılı kalıp
+                // posterlerin hiç yüklenmemesine yol açıyordu (öncelik görünürlükte geri
+                // yükselmiyor). Eski davranış: istek yaşamaya devam eder, hücre sökülünce
+                // FetchImage.deinit temizler.
                 .onDisappear(loadProfile == .standard ? .cancel : nil)
                 .frame(width: width, height: height)
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
@@ -88,25 +93,20 @@ struct CachedImage: View {
         }
     }
 
-    private func downsamplePixelSize() -> CGSize {
-        switch loadProfile {
-        case .shelf:
-            // Yatay raflarda önizleme: 2x yeterli, 3x gereksiz bellek tüketir
-            let s = min(UIScreen.main.scale, 2)
-            return CGSize(width: ceil(width * s), height: ceil(height * s))
-        case .standard, .grid:
-            // Grid / liste: 2x görsel olarak 3x'ten ayırt edilemez, %44 daha az bellek
-            let s = min(UIScreen.main.scale, 2)
-            return CGSize(width: ceil(width * s), height: ceil(height * s))
-        case .high:
-            // Hero / backdrop: büyük ekranda 3x kalite korunur
-            let s = min(UIScreen.main.scale, 3)
-            return CGSize(width: ceil(width * s), height: ceil(height * s))
-        }
+    private func makeRequest(url: URL) -> ImageRequest {
+        Self.request(url: url, width: width, height: height, contentMode: contentMode, loadProfile: loadProfile)
     }
 
-    private func makeRequest(url: URL) -> ImageRequest {
-        let target = downsamplePixelSize()
+    /// Render ile birebir aynı ImageRequest. ListImagePrefetch de bunu kullanır —
+    /// prefetch/render anahtarları ancak böyle eşleşir (bkz. Resize size+contentMode).
+    static func request(
+        url: URL,
+        width: CGFloat,
+        height: CGFloat,
+        contentMode: SwiftUI.ContentMode,
+        loadProfile: ImageLoadProfile
+    ) -> ImageRequest {
+        let target = downsamplePixelSize(width: width, height: height, loadProfile: loadProfile)
         let nukeMode: ImageProcessingOptions.ContentMode = (contentMode == .fill) ? .aspectFill : .aspectFit
         return ImageRequest(
             url: url,
@@ -120,6 +120,19 @@ struct CachedImage: View {
                 )
             ]
         )
+    }
+
+    private static func downsamplePixelSize(width: CGFloat, height: CGFloat, loadProfile: ImageLoadProfile) -> CGSize {
+        switch loadProfile {
+        case .shelf, .standard, .grid:
+            // 2x görsel olarak 3x'ten ayırt edilemez, %44 daha az bellek
+            let s = min(UIScreen.main.scale, 2)
+            return CGSize(width: ceil(width * s), height: ceil(height * s))
+        case .high:
+            // Hero / backdrop: büyük ekranda 3x kalite korunur
+            let s = min(UIScreen.main.scale, 3)
+            return CGSize(width: ceil(width * s), height: ceil(height * s))
+        }
     }
 
     private var placeholder: some View {

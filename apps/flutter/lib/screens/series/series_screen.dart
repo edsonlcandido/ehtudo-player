@@ -756,18 +756,16 @@ class _SeriesScreenState extends State<SeriesScreen> {
                   ),
                 ),
                 Expanded(
-                  child: FutureBuilder<List<EpisodesData>>(
-                    future: _repository.getSeriesEpisodesBySeason(
-                      seriesInfo?.seriesId ?? widget.contentItem.id.toString(),
-                      season.seasonNumber,
-                    ),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
+                  child: Builder(
+                    builder: (context) {
+                      // Use the already-loaded, known-good in-memory list
+                      // instead of re-querying the repository/cache, which
+                      // was returning empty for some providers.
+                      final seasonEpisodes = episodes
+                          .where((e) => e.season == season.seasonNumber)
+                          .toList();
 
-                      final episodes = snapshot.data ?? [];
-                      if (episodes.isEmpty) {
+                      if (seasonEpisodes.isEmpty) {
                         return Center(
                           child: Text(context.loc.not_found_in_category),
                         );
@@ -776,9 +774,9 @@ class _SeriesScreenState extends State<SeriesScreen> {
                       return ListView.builder(
                         controller: scrollController,
                         padding: const EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: episodes.length,
+                        itemCount: seasonEpisodes.length,
                         itemBuilder: (context, index) {
-                          final episode = episodes[index];
+                          final episode = seasonEpisodes[index];
                           return _buildEpisodeCard(episode);
                         },
                       );

@@ -66,6 +66,71 @@ enum DownloadStorage {
         try? FileManager.default.removeItem(at: url)
     }
 
+    /// Önemli kullanım için kullanılabilir disk kapasitesi (iOS gerekirse purgeable
+    /// alanı da hesaba katar); okunamazsa nil.
+    static func availableCapacityBytes() -> Int64? {
+        guard let root = try? rootDirectory(),
+              let values = try? root.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        else { return nil }
+        return values.volumeAvailableCapacityForImportantUsage
+    }
+
+    // MARK: - Resume data
+
+    /// Directory holding URLSession resume-data blobs for interrupted downloads.
+    /// Lives under the (backup-excluded) downloads root so blobs survive relaunches.
+    private static func resumeDataDirectory() throws -> URL {
+        let dir = try rootDirectory().appendingPathComponent(".resume", isDirectory: true)
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: dir.path) {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        return dir
+    }
+
+    private static func resumeDataURL(forId id: String) throws -> URL {
+        let safeId = id.replacingOccurrences(of: "/", with: "_")
+        return try resumeDataDirectory()
+            .appendingPathComponent(safeId)
+            .appendingPathExtension("resume")
+    }
+
+    static func saveResumeData(_ data: Data, forId id: String) {
+        guard let url = try? resumeDataURL(forId: id) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+
+    static func loadResumeData(forId id: String) -> Data? {
+        guard let url = try? resumeDataURL(forId: id) else { return nil }
+        return try? Data(contentsOf: url)
+    }
+
+    static func hasResumeData(forId id: String) -> Bool {
+        guard let url = try? resumeDataURL(forId: id) else { return false }
+        return FileManager.default.fileExists(atPath: url.path)
+    }
+
+    static func removeResumeData(forId id: String) {
+        guard let url = try? resumeDataURL(forId: id) else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    /// Removes all resume blobs belonging to a playlist (item ids embed the playlist UUID).
+    static func removeResumeData(playlistId: UUID) {
+        guard let dir = try? resumeDataDirectory() else { return }
+        let needle = playlistId.uuidString
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return }
+        for file in files where file.lastPathComponent.contains(needle) {
+            try? fm.removeItem(at: file)
+        }
+    }
+
+    static func removeAllResumeData() {
+        guard let dir = try? resumeDataDirectory() else { return }
+        try? FileManager.default.removeItem(at: dir)
+    }
+
     // MARK: - Storage stats
 
     /// Belirtilen klasör altındaki tüm dosyaların toplam bayt boyutunu döner.

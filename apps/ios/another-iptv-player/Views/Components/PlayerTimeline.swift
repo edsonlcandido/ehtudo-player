@@ -61,7 +61,7 @@ struct PlayerTimeline: View {
                     }
             )
         }
-        .frame(height: 28) // Dokunma alanı — thumb 18'e büyüyünce de kesilmesin.
+        .frame(height: 44) // HIG minimum dokunma hedefi; görsel bar ince kalır.
     }
 }
 
