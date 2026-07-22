@@ -22,6 +22,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -30,10 +32,13 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -518,5 +523,86 @@ fun DetailInfoTextBlock(
             maxLines = maxLines,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+}
+
+// ---- Metadata error banner ----
+
+/**
+ * Persistent, dismissible banner shown above the detail content when the
+ * `get_vod_info` / `get_series_info` enrichment fetch has failed but the
+ * row itself is present locally.
+ *
+ * Replaces the previous behaviour of swapping the whole screen from
+ * [ErrorState] back to the detail on a re-emitted Room row — a one-to-two
+ * frame flash that left the user no chance to read the message. Now the
+ * error stays anchored at the top of the content (no auto-dismiss) and the
+ * user can retry the fetch or dismiss it explicitly.
+ *
+ * @param error   raw error message from the failed call (e.g. HTTP body).
+ * @param onRetry re-trigger the metadata fetch.
+ * @param onDismiss clear the error; row continues to render without it.
+ */
+@Composable
+fun MetadataErrorBanner(
+    error: String,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        shape = MaterialTheme.shapes.medium,
+        tonalElevation = 0.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Default.ErrorOutline,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.detail_metadata_failed),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = error,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onRetry) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(text = stringResource(R.string.common_retry))
+                    }
+                    TextButton(onClick = onDismiss) {
+                        Text(text = stringResource(R.string.detail_metadata_dismiss))
+                    }
+                }
+            }
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = stringResource(R.string.detail_metadata_dismiss),
+                )
+            }
+        }
     }
 }

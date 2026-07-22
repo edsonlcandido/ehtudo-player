@@ -156,6 +156,9 @@
     <string name="detail_loading_playlist">Playlist yükleniyor…</string>
     <string name="detail_seasons_loading">Sezonlar yükleniyor…</string>
     <string name="detail_seasons_failed">Sezonlar yüklenemedi.</string>
+    <string name="detail_metadata_failed">Detaylar yüklenemedi.</string>
+    <string name="detail_metadata_dismiss">Kapat</string>
+    <string name="detail_error_retry">Detayları tekrar yükle</string>
     <string name="detail_no_seasons">Bu dizi için sezon bilgisi yok.</string>
     <string name="detail_no_episodes">Bu sezon için bölüm bulunamadı.</string>
     <string name="detail_watch">İzle</string>

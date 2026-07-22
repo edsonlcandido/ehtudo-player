@@ -17,8 +17,13 @@ internal fun PreviewPlaylistRepository(vararg seeded: Playlist): PlaylistReposit
     val state = MutableStateFlow(seeded.toList())
     val dao = object : PlaylistDao {
         override fun observeAll(): Flow<List<Playlist>> = state
+        override suspend fun first(): Playlist? = state.value.firstOrNull()
         override suspend fun findById(id: String): Playlist? =
             state.value.firstOrNull { it.id == id }
+        override fun observeById(id: String): Flow<Playlist?> =
+            kotlinx.coroutines.flow.flow {
+                emit(state.value.firstOrNull { it.id == id })
+            }
         override suspend fun insert(playlist: Playlist) {
             state.value = state.value.filterNot { it.id == playlist.id } + playlist
         }

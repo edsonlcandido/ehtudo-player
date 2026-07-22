@@ -44,7 +44,7 @@ $(CACHE_DIR)/default-%-$(MPV_ANDROID_VERSION).jar:
 	@mkdir -p $(CACHE_DIR)
 	@rm -f $@.tmp
 	curl -L $(BASE_URL)/default-$*.jar -o $@.tmp
-	shasum -a 256 -c <<< '$(SHA256_$*)  $@.tmp'
+	echo '$(SHA256_$*)  $@.tmp' | shasum -a 256 -c
 	mv $@.tmp $@
 	@touch $@
 

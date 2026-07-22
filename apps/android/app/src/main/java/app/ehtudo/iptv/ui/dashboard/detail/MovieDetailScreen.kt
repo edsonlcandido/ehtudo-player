@@ -36,6 +36,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -102,10 +103,18 @@ fun MovieDetailScreen(
     // in once the fetch completes.
     var isFetchingMetadata by remember(streamId, playlistId) { mutableStateOf(false) }
     var fetchError by remember(streamId, playlistId) { mutableStateOf<String?>(null) }
+    // Bumped by the retry buttons (banner + full-screen ErrorState) to force
+    // the LaunchedEffect below to re-run even when nothing else has changed.
+    var retryToken by remember(streamId, playlistId) { mutableIntStateOf(0) }
+
+    fun retryFetch() {
+        fetchError = null
+        retryToken += 1
+    }
 
     // Trigger the fetch once we know both the playlist + the row + the row
     // has never been enriched. iOS does this in `.task { fetchMovieInfo() }`.
-    LaunchedEffect(playlist?.id, movie?.streamId, movie?.metadataLoaded) {
+    LaunchedEffect(playlist?.id, movie?.streamId, movie?.metadataLoaded, retryToken) {
         val pl = playlist ?: return@LaunchedEffect
         val current = movie ?: return@LaunchedEffect
         if (current.metadataLoaded || isFetchingMetadata) return@LaunchedEffect
@@ -174,8 +183,12 @@ fun MovieDetailScreen(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
     ) { _ ->
         when {
+            // Row is genuinely missing from the local DB and the metadata
+            // fetch has failed. Show a full-screen error with a retry so
+            // the user can recover without navigating away.
             movie == null && fetchError != null -> ErrorState(
                 message = fetchError ?: stringResource(R.string.settings_unknown_error),
+                onRetry = ::retryFetch,
             )
             movie == null -> LoadingState(message = stringResource(R.string.detail_loading_movie))
             else -> {
@@ -183,6 +196,9 @@ fun MovieDetailScreen(
                 MovieDetailContent(
                     movie = movie!!,
                     playlist = pl,
+                    metadataError = fetchError,
+                    onRetryMetadata = ::retryFetch,
+                    onDismissMetadata = { fetchError = null },
                     onWatch = {
                         if (pl == null) return@MovieDetailContent
                         onPlay()
@@ -210,6 +226,9 @@ fun MovieDetailScreen(
 private fun MovieDetailContent(
     movie: app.ehtudo.iptv.data.local.VodStreamEntity,
     playlist: Playlist?,
+    metadataError: String?,
+    onRetryMetadata: () -> Unit,
+    onDismissMetadata: () -> Unit,
     onWatch: () -> Unit,
     onTrailer: (String) -> Unit,
 ) {
@@ -232,6 +251,18 @@ private fun MovieDetailContent(
             .padding(bottom = 48.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
+        // Persistent banner over the content while the metadata enrichment
+        // fetch has failed. Replaces the previous behaviour of swapping the
+        // whole screen to ErrorState, which flashed for a frame when the
+        // Room flow re-emitted the row.
+        if (metadataError != null) {
+            MetadataErrorBanner(
+                error = metadataError,
+                onRetry = onRetryMetadata,
+                onDismiss = onDismissMetadata,
+            )
+        }
+
         DetailHero(config = heroConfig)
 
         val genres = DetailFormatting.genreList(movie.genre)
@@ -306,7 +337,7 @@ private fun LoadingState(message: String) {
 }
 
 @Composable
-private fun ErrorState(message: String) {
+private fun ErrorState(message: String, onRetry: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -328,6 +359,10 @@ private fun ErrorState(message: String) {
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
             )
+            Spacer(Modifier.height(20.dp))
+            Button(onClick = onRetry) {
+                Text(stringResource(R.string.common_retry))
+            }
         }
     }
 }

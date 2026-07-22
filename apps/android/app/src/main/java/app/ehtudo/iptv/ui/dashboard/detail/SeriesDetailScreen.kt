@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -36,6 +37,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -122,8 +124,16 @@ fun SeriesDetailScreen(
 
     var isFetchingInfo by remember(seriesId, playlistId) { mutableStateOf(false) }
     var fetchError by remember(seriesId, playlistId) { mutableStateOf<String?>(null) }
+    // Bumped by the retry buttons (banner + full-screen ErrorState) to force
+    // the LaunchedEffect below to re-run even when nothing else has changed.
+    var retryToken by remember(seriesId, playlistId) { mutableIntStateOf(0) }
 
-    LaunchedEffect(playlist?.id, series?.seriesId, series?.seasonsLoaded) {
+    fun retryFetch() {
+        fetchError = null
+        retryToken += 1
+    }
+
+    LaunchedEffect(playlist?.id, series?.seriesId, series?.seasonsLoaded, retryToken) {
         val pl = playlist ?: return@LaunchedEffect
         val current = series ?: return@LaunchedEffect
         if (current.seasonsLoaded || isFetchingInfo) return@LaunchedEffect
@@ -182,7 +192,13 @@ fun SeriesDetailScreen(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
     ) { _ ->
         when {
-            series == null && fetchError != null -> ErrorState(message = fetchError ?: stringResource(R.string.settings_unknown_error))
+            // Row is genuinely missing from the local DB and the metadata
+            // fetch has failed. Show a full-screen error with a retry so
+            // the user can recover without navigating away.
+            series == null && fetchError != null -> ErrorState(
+                message = fetchError ?: stringResource(R.string.settings_unknown_error),
+                onRetry = ::retryFetch,
+            )
             series == null -> LoadingState(message = stringResource(R.string.detail_loading_series))
             else -> {
                 val pl = playlist
@@ -194,6 +210,9 @@ fun SeriesDetailScreen(
                     onSelectSeason = { selectedSeasonId = it },
                     episodes = episodes,
                     seasonsLoading = isFetchingInfo,
+                    metadataError = fetchError,
+                    onRetryMetadata = ::retryFetch,
+                    onDismissMetadata = { fetchError = null },
                     onWatchFirst = {
                         val first = seasons.firstOrNull() ?: return@SeriesDetailContent
                         scope.launch {
@@ -224,6 +243,9 @@ private fun SeriesDetailContent(
     onSelectSeason: (String) -> Unit,
     episodes: List<EpisodeEntity>,
     seasonsLoading: Boolean,
+    metadataError: String?,
+    onRetryMetadata: () -> Unit,
+    onDismissMetadata: () -> Unit,
     onWatchFirst: () -> Unit,
     onPlayEpisode: (EpisodeEntity) -> Unit,
     onTrailer: (String) -> Unit,
@@ -247,6 +269,18 @@ private fun SeriesDetailContent(
             .padding(bottom = 48.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
+        // Persistent banner over the content while the metadata enrichment
+        // fetch has failed. Replaces the previous behaviour of swapping the
+        // whole screen to ErrorState, which flashed for a frame when the
+        // Room flow re-emitted the row.
+        if (metadataError != null) {
+            MetadataErrorBanner(
+                error = metadataError,
+                onRetry = onRetryMetadata,
+                onDismiss = onDismissMetadata,
+            )
+        }
+
         DetailHero(config = heroConfig)
 
         val genres = DetailFormatting.genreList(series.genre)
@@ -398,7 +432,7 @@ private fun LoadingState(message: String) {
 }
 
 @Composable
-private fun ErrorState(message: String) {
+private fun ErrorState(message: String, onRetry: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -420,6 +454,10 @@ private fun ErrorState(message: String) {
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
             )
+            Spacer(Modifier.height(20.dp))
+            Button(onClick = onRetry) {
+                Text(stringResource(R.string.common_retry))
+            }
         }
     }
 }

@@ -25,10 +25,10 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -39,11 +39,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ehtudo.iptv.R
+import app.ehtudo.iptv.data.CatalogTextSearch
 import app.ehtudo.iptv.data.HiddenCategoryStore
 import app.ehtudo.iptv.data.local.CategoryEntity
 import app.ehtudo.iptv.ui.LocalHiddenCategoryStore
+import app.ehtudo.iptv.ui.components.rememberDebouncedQuery
 import app.ehtudo.iptv.ui.dashboard.category.CategorySearchField
-import app.ehtudo.iptv.ui.dashboard.category.filterByQuery
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 
 /**
  * Kotlin port of iOS `CategoryPickerSheet`.
@@ -74,13 +77,19 @@ fun CategoryPickerSheet(
     val hiddenIds by hiddenStore.observeHidden(playlistId, contentType)
         .collectAsStateWithLifecycle(initialValue = hiddenStore.hiddenIds(playlistId, contentType))
 
-    var query by remember { mutableStateOf("") }
-
+    val q = rememberDebouncedQuery()
+    val entriesFlow = remember { MutableStateFlow<List<Entry>>(emptyList()) }
     val entries = remember(categories, itemCountsByCategoryId) {
         categories.map { Entry(it.id, it.name, itemCountsByCategoryId[it.id] ?: 0) }
     }
-    val filtered = remember(entries, query) {
-        entries.filterByQuery(query) { it.name }
+    LaunchedEffect(entries) { entriesFlow.value = entries }
+    val queryFlow = remember { MutableStateFlow(q.debounced) }
+    LaunchedEffect(q.debounced) { queryFlow.value = q.debounced }
+    val filtered by produceState(initialValue = entries) {
+        combine(entriesFlow, queryFlow) { list, query ->
+            if (query.isBlank()) list
+            else list.filter { CatalogTextSearch.matches(query, it.name) }
+        }.collect { value = it }
     }
     val visible = filtered.filter { it.id !in hiddenIds }
     val hidden = filtered.filter { it.id in hiddenIds }
@@ -101,8 +110,8 @@ fun CategoryPickerSheet(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             )
             CategorySearchField(
-                value = query,
-                onValueChange = { query = it },
+                value = q.input,
+                onValueChange = { q.set(it) },
                 placeholder = stringResource(R.string.picker_search_category),
             )
 

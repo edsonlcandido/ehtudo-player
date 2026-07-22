@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -15,9 +14,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -31,6 +27,9 @@ import app.ehtudo.iptv.ui.dashboard.PosterCard
 /**
  * Series category detail — adaptive grid of 2:3 poster cards. Tapping a
  * poster opens [SeriesDetailScreen] via [onOpenSeries].
+ *
+ * Per-screen search was removed — use the global Search tab in the bottom
+ * nav (first item) instead.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,11 +44,6 @@ fun SeriesCategoryDetailScreen(
     val byCategory by contentStore.seriesItemsByCategoryId.collectAsStateWithLifecycle()
     val category = categories.firstOrNull { it.id == categoryId }
     val allItems = byCategory[categoryId].orEmpty()
-
-    var query by remember { mutableStateOf("") }
-    val filtered = remember(allItems, query) {
-        allItems.filterByQuery(query) { it.series.name }
-    }
 
     Scaffold(
         topBar = {
@@ -70,16 +64,11 @@ fun SeriesCategoryDetailScreen(
         },
     ) { innerPadding ->
         Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-            CategorySearchField(
-                value = query,
-                onValueChange = { query = it },
-                placeholder = stringResource(R.string.category_search_series),
-            )
             CategoryGrid(
-                items = filtered,
+                items = allItems,
                 minCellSize = 110.dp,
-                emptyIcon = if (query.isBlank()) Icons.Default.Tv else Icons.Default.Search,
-                emptyMessage = if (query.isBlank()) stringResource(R.string.empty_category_no_series) else stringResource(R.string.empty_category_search_no_series),
+                emptyIcon = Icons.Default.Tv,
+                emptyMessage = stringResource(R.string.empty_category_no_series),
                 itemKey = { it.id },
             ) { row ->
                 PosterCard(

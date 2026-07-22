@@ -156,6 +156,9 @@
     <string name="detail_loading_playlist">Loading playlist…</string>
     <string name="detail_seasons_loading">Loading seasons…</string>
     <string name="detail_seasons_failed">Failed to load seasons.</string>
+    <string name="detail_metadata_failed">Could not load details.</string>
+    <string name="detail_metadata_dismiss">Dismiss</string>
+    <string name="detail_error_retry">Retry loading details</string>
     <string name="detail_no_seasons">No season info for this series.</string>
     <string name="detail_no_episodes">No episodes in this season.</string>
     <string name="detail_watch">Watch</string>

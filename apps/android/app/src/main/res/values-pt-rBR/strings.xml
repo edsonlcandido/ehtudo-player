@@ -157,6 +157,9 @@
     <string name="detail_loading_playlist">Carregando lista…</string>
     <string name="detail_seasons_loading">Carregando temporadas…</string>
     <string name="detail_seasons_failed">Falha ao carregar temporadas.</string>
+    <string name="detail_metadata_failed">Não foi possível carregar os detalhes.</string>
+    <string name="detail_metadata_dismiss">Dispensar</string>
+    <string name="detail_error_retry">Tentar carregar os detalhes novamente</string>
     <string name="detail_no_seasons">Sem informações de temporada para esta série.</string>
     <string name="detail_no_episodes">Sem episódios nesta temporada.</string>
     <string name="detail_watch">Assistir</string>

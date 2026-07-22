@@ -1,12 +1,10 @@
 package app.ehtudo.iptv.ui.dashboard.category
 
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.LiveTv
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -15,24 +13,26 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ehtudo.iptv.R
 import app.ehtudo.iptv.ui.LocalPlaylistContentStore
-import app.ehtudo.iptv.ui.dashboard.LiveStreamCard
 
 /**
- * Live-channel category detail — adaptive grid of square logo cards.
+ * Live-channel category detail — two-line list of channels (square logo on
+ * the left, name + category on the right). Replaces the previous adaptive
+ * grid so users can read long Portuguese-language channel names without
+ * truncation; see [LiveChannelList] for the row layout.
  *
- * iOS counterpart: `LiveCategoryDetailView`. Tapping a card hands the
- * `streamId` up via [onPlayChannel]; navigation routes to the native
- * `PlayerScreen` (kind `LIVE`).
+ * VOD / Series category details keep the poster grid because cover art is
+ * central to discovery there.
+ *
+ * iOS counterpart: `LiveCategoryDetailView` in `LiveChannels`.
+ *
+ * Per-screen search was removed — global search lives in the dashboard's
+ * bottom nav (first tab) and uses the same `CatalogTextSearch` matcher.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,11 +48,6 @@ fun LiveCategoryDetailScreen(
     val byCategory by contentStore.liveStreamsByCategoryId.collectAsStateWithLifecycle()
     val category = categories.firstOrNull { it.id == categoryId }
     val allItems = byCategory[categoryId].orEmpty()
-
-    var query by remember { mutableStateOf("") }
-    val filtered = remember(allItems, query) {
-        allItems.filterByQuery(query) { it.stream.name }
-    }
 
     Scaffold(
         topBar = {
@@ -72,25 +67,12 @@ fun LiveCategoryDetailScreen(
             )
         },
     ) { innerPadding ->
-        Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-            CategorySearchField(
-                value = query,
-                onValueChange = { query = it },
-                placeholder = stringResource(R.string.category_search_live),
-            )
-            CategoryGrid(
-                items = filtered,
-                minCellSize = 110.dp,
-                emptyIcon = if (query.isBlank()) Icons.Default.LiveTv else Icons.Default.Search,
-                emptyMessage = if (query.isBlank()) stringResource(R.string.empty_category_no_live) else stringResource(R.string.empty_category_search_no_live),
-                itemKey = { it.id },
-            ) { row ->
-                LiveStreamCard(
-                    name = row.stream.name,
-                    iconUrl = row.stream.streamIcon,
-                    onClick = { onPlayChannel(row.stream.streamId) },
-                )
-            }
-        }
+        LiveChannelList(
+            items = allItems,
+            modifier = Modifier.fillMaxSize().padding(innerPadding),
+            emptyIcon = Icons.Default.LiveTv,
+            emptyMessage = stringResource(R.string.empty_category_no_live),
+            onClick = { row -> onPlayChannel(row.stream.streamId) },
+        )
     }
 }

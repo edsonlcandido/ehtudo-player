@@ -32,12 +32,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,9 +50,17 @@ import app.ehtudo.iptv.AnotherIptvPlayerApp
 import app.ehtudo.iptv.R
 import app.ehtudo.iptv.data.CatalogTextSearch
 import app.ehtudo.iptv.data.CatalogTextSearch.normalize
+import app.ehtudo.iptv.data.local.LiveStreamWithCategory
+import app.ehtudo.iptv.data.local.M3uChannelEntity
+import app.ehtudo.iptv.data.local.SeriesWithCategory
+import app.ehtudo.iptv.data.local.VodStreamWithCategory
 import app.ehtudo.iptv.model.PlaylistKind
 import app.ehtudo.iptv.ui.LocalPlaylistContentStore
 import app.ehtudo.iptv.ui.LocalPlaylistRepository
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.flowOf
 
 /**
  * Global search across the active playlist. Mirrors iOS `SearchView`.
@@ -92,39 +100,24 @@ fun SearchScreen(
     val xtreamSeries by xtreamStore.seriesItems.collectAsState()
     val m3uChannels by m3uStore.channels.collectAsState()
 
-    val resultsState = remember(query, kind, xtreamLive, xtreamVod, xtreamSeries, m3uChannels) {
-        derivedStateOf<List<SearchHit>> {
-            if (query.isBlank()) emptyList()
-            else when (kind) {
-                PlaylistKind.M3U -> m3uChannels
-                    .filter { CatalogTextSearch.matches(query, it.name) }
-                    .sortedWith(relevance(query) { it.name })
-                    .take(200)
-                    .map { SearchHit.M3u(it.id, it.name, it.tvgLogo, it.groupTitle) }
-                PlaylistKind.XTREAM -> {
-                    val list = mutableListOf<SearchHit>()
-                    list += xtreamLive
-                        .filter { CatalogTextSearch.matches(query, it.stream.name) }
-                        .sortedWith(relevance(query) { it.stream.name })
-                        .take(80)
-                        .map { SearchHit.Live(it.stream.streamId, it.stream.name, it.stream.streamIcon, it.categoryName) }
-                    list += xtreamVod
-                        .filter { CatalogTextSearch.matches(query, it.stream.name) }
-                        .sortedWith(relevance(query) { it.stream.name })
-                        .take(80)
-                        .map { SearchHit.Movie(it.stream.streamId, it.stream.name, it.stream.streamIcon, it.categoryName) }
-                    list += xtreamSeries
-                        .filter { CatalogTextSearch.matches(query, it.series.name) }
-                        .sortedWith(relevance(query) { it.series.name })
-                        .take(80)
-                        .map { SearchHit.Series(it.series.seriesId, it.series.name, it.series.cover, it.categoryName) }
-                    list
-                }
-                else -> emptyList()
-            }
-        }
+    val queryFlow = remember { MutableStateFlow("") }
+    LaunchedEffect(query) {
+        queryFlow.value = query
     }
-    val results = resultsState.value
+
+    val results by produceState<List<SearchHit>>(initialValue = emptyList()) {
+        val kindFlow = flowOf(kind)
+        val tripleFlow = flowOf(Triple(xtreamLive, xtreamVod, xtreamSeries))
+        val m3uFlow = flowOf(m3uChannels)
+        combine(
+            queryFlow.debounce { q -> if (q.isBlank()) 0L else 250L },
+            kindFlow,
+            tripleFlow,
+            m3uFlow,
+        ) { q, k, triple, m3u ->
+            runSearch(q, k, triple.first, triple.second, triple.third, m3u)
+        }.collect { value = it }
+    }
 
     Scaffold(
         topBar = {
@@ -248,6 +241,53 @@ private fun <T> relevance(query: String, name: (T) -> String): Comparator<T> {
     return compareByDescending<T> { CatalogTextSearch.equals(name(it), query) }
         .thenByDescending { normalize(name(it)).startsWith(nq) }
         .thenBy { normalize(name(it)) }
+}
+
+private fun runSearch(
+    q: String,
+    kind: PlaylistKind?,
+    live: List<LiveStreamWithCategory>,
+    vod: List<VodStreamWithCategory>,
+    series: List<SeriesWithCategory>,
+    m3u: List<M3uChannelEntity>,
+): List<SearchHit> {
+    if (q.isBlank()) return emptyList()
+    return when (kind) {
+        PlaylistKind.M3U -> m3u
+            .asSequence()
+            .filter { CatalogTextSearch.matches(q, it.name) }
+            .sortedWith(relevance(q) { it.name })
+            .take(200)
+            .map { SearchHit.M3u(it.id, it.name, it.tvgLogo, it.groupTitle) }
+            .toList()
+        PlaylistKind.XTREAM -> buildList {
+            addAll(
+                live.asSequence()
+                    .filter { CatalogTextSearch.matches(q, it.stream.name) }
+                    .sortedWith(relevance(q) { it.stream.name })
+                    .take(80)
+                    .map { SearchHit.Live(it.stream.streamId, it.stream.name, it.stream.streamIcon, it.categoryName) }
+                    .toList()
+            )
+            addAll(
+                vod.asSequence()
+                    .filter { CatalogTextSearch.matches(q, it.stream.name) }
+                    .sortedWith(relevance(q) { it.stream.name })
+                    .take(80)
+                    .map { SearchHit.Movie(it.stream.streamId, it.stream.name, it.stream.streamIcon, it.categoryName) }
+                    .toList()
+            )
+            addAll(
+                series.asSequence()
+                    .filter { CatalogTextSearch.matches(q, it.series.name) }
+                    .sortedWith(relevance(q) { it.series.name })
+                    .take(80)
+                    .map { SearchHit.Series(it.series.seriesId, it.series.name, it.series.cover, it.categoryName) }
+                    .toList()
+            )
+        }
+        else -> emptyList()
+    }
 }
 
 private sealed class SearchHit(

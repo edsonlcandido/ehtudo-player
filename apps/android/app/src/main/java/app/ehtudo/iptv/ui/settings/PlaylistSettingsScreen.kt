@@ -101,7 +101,6 @@ import java.time.temporal.ChronoUnit
 fun PlaylistSettingsBody(
     playlistId: String,
     appVersion: String,
-    onOpenDownloads: () -> Unit = {},
     onOpenHistory: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -496,29 +495,13 @@ fun PlaylistSettingsBody(
                 )
             }
 
-            // Player preferences — PiP, background playback, 2× long-press.
-            // iOS registers these as defaults at app init; we mirror them
-            // here with one source-of-truth `PlayerPreferences`.
+            // Player preferences — 2× long-press only.
+            // PiP and background playback were removed because the upstream
+            // server doesn't support them; see PR note in `PlayerPreferences`.
             SettingsCard(title = stringResource(R.string.settings_card_player)) {
                 val playerPrefs = app.ehtudo.iptv.ui.LocalPlayerPreferences.current
-                val pip by playerPrefs.pipEnabled.collectAsState()
-                val bg by playerPrefs.continuePlayingInBackground.collectAsState()
                 val longPress by playerPrefs.speedUpOnLongPress.collectAsState()
 
-                SwitchRow(
-                    title = stringResource(R.string.settings_player_pip),
-                    subtitle = stringResource(R.string.settings_player_pip_subtitle),
-                    checked = pip,
-                    onChange = { playerPrefs.setPipEnabled(it) },
-                )
-                Divider()
-                SwitchRow(
-                    title = stringResource(R.string.settings_player_bg),
-                    subtitle = stringResource(R.string.settings_player_bg_subtitle),
-                    checked = bg,
-                    onChange = { playerPrefs.setContinuePlayingInBackground(it) },
-                )
-                Divider()
                 SwitchRow(
                     title = stringResource(R.string.settings_player_long_press),
                     subtitle = stringResource(R.string.settings_player_long_press_subtitle),
@@ -527,25 +510,9 @@ fun PlaylistSettingsBody(
                 )
             }
 
-            // Library — Downloads + Watch History entry points. iOS surfaces
-            // these on the dashboard side bar; the Android dashboard funnels
-            // them through Settings so the top app bar stays uncluttered.
+            // Library — Watch History entry point only. Downloads were
+            // removed because the upstream server doesn't allow them.
             SettingsCard(title = stringResource(R.string.settings_card_library)) {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.settings_library_downloads)) },
-                    supportingContent = {
-                        Text(
-                            stringResource(R.string.settings_library_downloads_subtitle),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                    trailingContent = {
-                        Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
-                    },
-                    colors = clickableListItemColors(),
-                    modifier = Modifier.clickableEnabled(true) { onOpenDownloads() },
-                )
-                Divider()
                 ListItem(
                     headlineContent = { Text(stringResource(R.string.settings_library_history)) },
                     supportingContent = {
