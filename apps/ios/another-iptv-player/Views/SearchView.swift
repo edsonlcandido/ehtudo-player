@@ -222,12 +222,30 @@ private struct SearchResultsView: View {
             }
 
             if liveResults.isEmpty && movieResults.isEmpty && seriesResults.isEmpty {
-                ContentUnavailableView.search(text: query)
+                if !contentStore.streamsLoaded {
+                    // Katalog hâlâ yükleniyor: yanlış "sonuç yok" göstermek kullanıcıya
+                    // içeriği kaybolmuş gibi görünür. streamsLoaded olunca aşağıdaki
+                    // .task tekrar arar.
+                    HStack {
+                        Spacer()
+                        VStack(spacing: 12) {
+                            ProgressView()
+                            Text(L("common.loading"))
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .listRowBackground(Color.clear)
+                } else {
+                    ContentUnavailableView.search(text: query)
+                }
             }
         }
         .listStyle(.insetGrouped)
         .task(id: query) { await runSearch() }
         .task(id: hiddenStore.version) { await runSearch() }
+        .task(id: contentStore.streamsLoaded) { await runSearch() }
     }
 
     private func runSearch() async {
@@ -260,6 +278,8 @@ private struct SearchResultsView: View {
     }
 
     private func playLive(_ item: LiveStreamWithCategory) {
+        // Tek geçişte grupla (O(N)); kategori başına filter+first taraması geniş
+        // sorgularda tap anında main thread'i milyonlarca karşılaştırmayla kilitliyordu.
         let sections: [LiveChannelCategorySection] = {
             var seen = Set<String>()
             var ids: [String] = []
@@ -267,10 +287,10 @@ private struct SearchResultsView: View {
                 let cid = i.stream.categoryId ?? "other"
                 if seen.insert(cid).inserted { ids.append(cid) }
             }
+            let grouped = Dictionary(grouping: liveResults) { $0.stream.categoryId ?? "other" }
             return ids.compactMap { cid -> LiveChannelCategorySection? in
-                let streams = liveResults.filter { ($0.stream.categoryId ?? "other") == cid }.map(\.stream)
-                guard let first = liveResults.first(where: { ($0.stream.categoryId ?? "other") == cid }) else { return nil }
-                return LiveChannelCategorySection(id: cid, title: first.categoryName, streams: streams)
+                guard let items = grouped[cid], let first = items.first else { return nil }
+                return LiveChannelCategorySection(id: cid, title: first.categoryName, streams: items.map(\.stream))
             }
         }()
         playerOverlay.present(playlistId: playlist.id) {

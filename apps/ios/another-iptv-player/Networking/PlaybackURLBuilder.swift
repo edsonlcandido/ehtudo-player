@@ -25,10 +25,21 @@ struct PlaybackURLBuilder {
         return baseString.replacingOccurrences(of: " ", with: "")
     }
     
+    /// Path segmenti için izinli karakterler: `urlPathAllowed` eksi segment ayırıcı `/`.
+    private static let pathSegmentAllowed: CharacterSet = {
+        var set = CharacterSet.urlPathAllowed
+        set.remove(charactersIn: "/")
+        return set
+    }()
+
     private var authPath: String {
+        // Ham birleştirme, '#'/'?'/'/'/'%' içeren hesaplarda URL'yi sessizce bozuyordu
+        // (login query-item kodlamasından geçtiği için çalışıyor, oynatma çalışmıyordu).
         let u = playlist.username.trimmingCharacters(in: .whitespacesAndNewlines)
         let p = playlist.password.trimmingCharacters(in: .whitespacesAndNewlines)
-        return "\(u)/\(p)"
+        let eu = u.addingPercentEncoding(withAllowedCharacters: Self.pathSegmentAllowed) ?? u
+        let ep = p.addingPercentEncoding(withAllowedCharacters: Self.pathSegmentAllowed) ?? p
+        return "\(eu)/\(ep)"
     }
     
     /// Builds URL for a live stream. Xtream API direct playback format uses server/u/p/id.

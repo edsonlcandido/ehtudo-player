@@ -97,7 +97,10 @@ final class MPVPlayerContainerViewController: UIViewController {
     if pos.isFinite, pos >= 0 {
       CMTimebaseSetTime(tb, time: CMTime(seconds: pos, preferredTimescale: 600))
     }
-    CMTimebaseSetRate(tb, rate: mpvPlayer.isPaused ? 0 : 1)
+    // Rebuffering'de (paused-for-cache, isPaused'u ÇEVİRMEZ) ve 2x hızda saat gerçek
+    // durumu izlemeli; sabit rate=1 PiP zaman göstergesini kaydırıyordu.
+    let rate: Float64 = (mpvPlayer.isPaused || mpvPlayer.isBuffering) ? 0 : mpvPlayer.playbackRate
+    CMTimebaseSetRate(tb, rate: rate)
   }
 
   func setVideoContentMode(_ mode: UIView.ContentMode) {
@@ -173,6 +176,23 @@ final class MPVPlayerContainerViewController: UIViewController {
         self?.pipController?.invalidatePlaybackState()
       }
       .store(in: &cancellables)
+
+    // Rebuffering giriş/çıkışında ve hız değişiminde saat yeniden senkronlanır.
+    mpvPlayer.$isBuffering
+      .removeDuplicates()
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] _ in
+        self?.updateControlTimebase()
+      }
+      .store(in: &cancellables)
+
+    mpvPlayer.$playbackRate
+      .removeDuplicates()
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] _ in
+        self?.updateControlTimebase()
+      }
+      .store(in: &cancellables)
   }
 
   /// Arka plana alındığında PiP kapalıysa veya kullanıcı arka planda oynatmayı istemiyorsa
@@ -186,7 +206,27 @@ final class MPVPlayerContainerViewController: UIViewController {
     ) { [weak self] _ in
       self?.handleWillResignActive()
     }
-    appLifecycleObservers = [obs]
+    // Arka planda PiP yoksa (pipEnabled=false veya otomatik PiP başlamadıysa) mpv tam
+    // hızda decode + GLES render yapmaya devam ediyordu — kimsenin görmediği kareler
+    // için ciddi pil tüketimi. Ses arka plan modunda sürer; yalnız video askıya alınır.
+    let bg = NotificationCenter.default.addObserver(
+      forName: UIApplication.didEnterBackgroundNotification,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      guard let self else { return }
+      if self.pipController?.isPictureInPictureActive != true {
+        self.mpvPlayer.setVideoDecodingSuspended(true)
+      }
+    }
+    let fg = NotificationCenter.default.addObserver(
+      forName: UIApplication.willEnterForegroundNotification,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      self?.mpvPlayer.setVideoDecodingSuspended(false)
+    }
+    appLifecycleObservers = [obs, bg, fg]
   }
 
   var pipEnabled: Bool = true {
@@ -245,7 +285,9 @@ extension MPVPlayerContainerViewController: AVPictureInPictureControllerDelegate
   func pictureInPictureControllerWillStartPictureInPicture(
     _ pictureInPictureController: AVPictureInPictureController
   ) {
-    // Sample buffer content source: reparent yok. Inline overlay placeholder didStart'ta yansıtılır.
+    // Otomatik PiP, didEnterBackground civarında başlayabilir; askıdaysa video decode'u
+    // hemen geri aç ki PiP penceresi kare alabilsin.
+    mpvPlayer.setVideoDecodingSuspended(false)
   }
 
   func pictureInPictureControllerDidStartPictureInPicture(
@@ -373,7 +415,10 @@ extension MPVPlayerContainerViewController: AVPictureInPictureSampleBufferPlayba
 
 /// `PlayerView` ve demo için: video yüzeyi + PiP.
 struct MPVPlayerPlaybackContainerView: UIViewControllerRepresentable {
-  @ObservedObject var mpvPlayer: MPVPlayer
+  // @ObservedObject DEĞİL: body hiçbir published değeri okumuyor; observe etmek
+  // MPVPlayer'ın kare hızındaki objectWillChange'leriyle updateUIViewController'ı
+  // saniyede onlarca kez tetikliyordu.
+  let mpvPlayer: MPVPlayer
   var playbackBridge: VideoPlayerController?
   var manualPiPTrigger: Int
   var pipEnabled: Bool

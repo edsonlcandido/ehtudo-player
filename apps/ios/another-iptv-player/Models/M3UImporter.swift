@@ -30,11 +30,18 @@ enum M3UImporter {
         try await AppDatabase.shared.write { db in
             try updated.save(db)
             try db.execute(sql: "DELETE FROM m3uChannel WHERE playlistId = ?", arguments: [pid])
-            // Aynı (playlist, url) için aynı id üretirken hash çarpışmalarını engellemek için
-            // sortIndex de fark gözetilmek istenirse hash girdisine eklenebilir; şu an URL yeterli.
+            // Aynı URL birden çok grupta geçebilir ("ALL" + ülke grubu gibi) — eskiden
+            // INSERT OR REPLACE hepsini tek satıra indiriyordu ve kanallar gruplardan
+            // sessizce kayboluyordu. İlk geçiş URL bazlı eski kimliğini korur (favoriler
+            // ve izleme geçmişi reimport'ta yaşasın diye), sonraki tekrarlar deterministik
+            // `#n` son ekiyle ayrı satır olur.
+            var urlOccurrences: [String: Int] = [:]
             for (index, ch) in channels.enumerated() {
+                let trimmedURL = ch.url.trimmingCharacters(in: .whitespacesAndNewlines)
+                let occurrence = urlOccurrences[trimmedURL, default: 0]
+                urlOccurrences[trimmedURL] = occurrence + 1
                 let row = DBM3UChannel(
-                    id: stableChannelID(playlistId: pid, url: ch.url, fallbackIndex: index),
+                    id: stableChannelID(playlistId: pid, url: ch.url, fallbackIndex: index, occurrence: occurrence),
                     playlistId: pid,
                     name: ch.name,
                     url: ch.url,
@@ -46,7 +53,6 @@ enum M3UImporter {
                     userAgent: ch.userAgent,
                     sortIndex: index
                 )
-                // Aynı URL birden fazla geçerse INSERT OR REPLACE — sonuncusu kalır.
                 try row.save(db)
             }
         }
@@ -54,13 +60,19 @@ enum M3UImporter {
 
     /// Deterministik kanal ID üretimi: reimport sonrası aynı URL aynı ID'yi alır.
     /// URL boşsa fallback olarak sortIndex kullanılır (nadir durum, ama güvence).
-    static func stableChannelID(playlistId: UUID, url: String, fallbackIndex: Int = 0) -> String {
-        let key: String
+    /// `occurrence`: aynı URL'nin kaçıncı tekrarı (0 = ilk). İlk geçiş eski formatla
+    /// aynı kimliği üretir; tekrarlar `#n` son ekiyle ayrışır ve playlist sırası
+    /// değişmedikçe reimport'ta da aynı kimliği alır.
+    static func stableChannelID(playlistId: UUID, url: String, fallbackIndex: Int = 0, occurrence: Int = 0) -> String {
+        var key: String
         let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             key = "\(playlistId.uuidString):__idx:\(fallbackIndex)"
         } else {
             key = "\(playlistId.uuidString):\(trimmed)"
+        }
+        if occurrence > 0 {
+            key += "#\(occurrence)"
         }
         let data = Data(key.utf8)
         let digest = SHA256.hash(data: data)

@@ -16,11 +16,29 @@ struct ContentView: View {
     @State private var showingDeleteAlert = false
     @State private var selectedPlaylist: Playlist?
     @State private var hasAttemptedAutoLoad = false
+    @State private var showStorageWarning = false
     @Environment(\.appDatabase) private var appDatabase
-    
+
     private let lastPlaylistKey = "lastPlaylistId"
-    
+
     var body: some View {
+        storageAwareBody
+            .onAppear {
+                if AppDatabase.isEphemeral || AppDatabase.didResetCorruptStore {
+                    showStorageWarning = true
+                }
+            }
+            .alert(
+                AppDatabase.isEphemeral ? L("db.error.ephemeral_title") : L("db.error.reset_title"),
+                isPresented: $showStorageWarning
+            ) {
+                Button(L("common.ok"), role: .cancel) {}
+            } message: {
+                Text(AppDatabase.isEphemeral ? L("db.error.ephemeral_message") : L("db.error.reset_message"))
+            }
+    }
+
+    private var storageAwareBody: some View {
         ZStack {
             if let playlist = selectedPlaylist {
                 Group {
@@ -30,6 +48,8 @@ struct ContentView: View {
                             withAnimation(.easeInOut(duration: 0.3)) {
                                 selectedPlaylist = nil
                             }
+                            // Seçiciye dönünce dev katalog kopyalarını bırak.
+                            M3UContentStore.shared.unload()
                         }
                     } else {
                         DashboardView(playlist: playlist) {
@@ -37,6 +57,7 @@ struct ContentView: View {
                             withAnimation(.easeInOut(duration: 0.3)) {
                                 selectedPlaylist = nil
                             }
+                            PlaylistContentStore.shared.unload()
                         }
                     }
                 }
@@ -247,6 +268,7 @@ struct ContentView: View {
                 for id in idsToDelete {
                     HiddenCategoryStore.shared.removeAll(playlistId: id)
                     DownloadManager.shared.cleanupPlaylist(playlistId: id)
+                    ImportedSubtitleStore.removeAll(playlistId: id)
                 }
             } catch {
                 print("Failed to delete playlist: \(error)")

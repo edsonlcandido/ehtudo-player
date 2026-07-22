@@ -5,19 +5,24 @@ struct FavoritesView: View {
     let playlist: Playlist
 
     @State private var selectedType: String
+    @State private var searchText = ""
     @Environment(\.posterMetrics) private var posterMetrics
     @EnvironmentObject private var playerOverlay: PlayerOverlayController
     
     @Query<FavoriteLiveRequest> private var favoriteLive: [LiveStreamWithCategory]
     @Query<FavoriteVODRequest> private var favoriteVODs: [VODWithCategory]
     @Query<FavoriteSeriesRequest> private var favoriteSeries: [SeriesWithCategory]
-    
+    @Query<WatchProgressMapRequest> private var vodProgressMap: [String: Double]
+    @Query<WatchProgressMapRequest> private var seriesProgressMap: [String: Double]
+
     init(playlist: Playlist, initialType: String = "vod") {
         self.playlist = playlist
         self._selectedType = State(initialValue: initialType)
         _favoriteLive = Query(FavoriteLiveRequest(playlistId: playlist.id), in: \.appDatabase)
         _favoriteVODs = Query(FavoriteVODRequest(playlistId: playlist.id), in: \.appDatabase)
         _favoriteSeries = Query(FavoriteSeriesRequest(playlistId: playlist.id), in: \.appDatabase)
+        _vodProgressMap = Query(WatchProgressMapRequest(playlistId: playlist.id, type: "vod"), in: \.appDatabase)
+        _seriesProgressMap = Query(WatchProgressMapRequest(playlistId: playlist.id, type: "series"), in: \.appDatabase)
     }
     
     private var gridColumns: [GridItem] {
@@ -50,33 +55,57 @@ struct FavoritesView: View {
         }
         .navigationTitle(L("favorites.title"))
         .navigationBarTitleDisplayMode(.large)
+        .searchable(text: $searchText, prompt: L("favorites.search_placeholder"))
+    }
+
+    // MARK: - Search filtering (favori listeleri küçük olduğundan render başına filtre yeterli)
+
+    private var trimmedQuery: String { searchText.trimmingCharacters(in: .whitespaces) }
+
+    private var displayedLive: [LiveStreamWithCategory] {
+        guard !trimmedQuery.isEmpty else { return favoriteLive }
+        return favoriteLive.filter { CatalogTextSearch.matches(search: trimmedQuery, text: $0.stream.name) }
+    }
+
+    private var displayedVODs: [VODWithCategory] {
+        guard !trimmedQuery.isEmpty else { return favoriteVODs }
+        return favoriteVODs.filter { CatalogTextSearch.matches(search: trimmedQuery, text: $0.stream.name) }
+    }
+
+    private var displayedSeries: [SeriesWithCategory] {
+        guard !trimmedQuery.isEmpty else { return favoriteSeries }
+        return favoriteSeries.filter { CatalogTextSearch.matches(search: trimmedQuery, text: $0.series.name) }
     }
 
     private func presentFavoriteLive(stream: DBLiveStream, history: DBWatchHistory?) {
-        guard let url = PlaybackURLBuilder(playlist: playlist).liveURL(streamId: stream.streamId) else { return }
+        // Diğer tüm canlı giriş noktaları gibi LivePlayerShell: favoriler arası
+        // önceki/sonraki kanal ve yan panel çalışsın (çıplak PlayerView bunları kaybediyordu).
+        let queue = displayedLive.map(\.stream)
+        let sections = [LiveChannelCategorySection(
+            id: "favorites",
+            title: L("favorites.title"),
+            streams: queue
+        )]
         playerOverlay.present(playlistId: playlist.id) {
-            PlayerView(
-                url: url,
-                title: stream.name,
-                subtitle: nil,
-                artworkURL: stream.streamIcon.flatMap { URL(string: $0) },
-                isLiveStream: true,
-                playlistId: playlist.id,
-                streamId: String(stream.streamId),
-                type: "live",
-                resumeTimeMs: history?.lastTimeMs
+            LivePlayerShell(
+                playlist: playlist,
+                queue: queue,
+                sections: sections,
+                initialStream: stream,
+                initialHistory: history,
+                subtitle: nil
             )
         }
     }
     
     @ViewBuilder
     private var liveGrid: some View {
-        if favoriteLive.isEmpty {
-            emptyState(icon: "tv", message: L("favorites.empty.live"))
+        if displayedLive.isEmpty {
+            emptyState(icon: "tv", message: trimmedQuery.isEmpty ? L("favorites.empty.live") : L("list.no_result"))
         } else {
             ScrollView {
                 LazyVGrid(columns: gridColumns, spacing: posterMetrics.gridRowSpacing) {
-                    ForEach(favoriteLive) { item in
+                    ForEach(displayedLive) { item in
                         LiveStreamCard(
                             playlistId: playlist.id,
                             stream: item.stream,
@@ -96,12 +125,12 @@ struct FavoritesView: View {
     
     @ViewBuilder
     private var vodGrid: some View {
-        if favoriteVODs.isEmpty {
-            emptyState(icon: "film", message: L("favorites.empty.movie"))
+        if displayedVODs.isEmpty {
+            emptyState(icon: "film", message: trimmedQuery.isEmpty ? L("favorites.empty.movie") : L("list.no_result"))
         } else {
             ScrollView {
                 LazyVGrid(columns: gridColumns, spacing: posterMetrics.gridRowSpacing) {
-                    ForEach(favoriteVODs) { item in
+                    ForEach(displayedVODs) { item in
                         NavigationLink(destination: MovieDetailView(playlist: playlist, movie: item.stream)) {
                             VODStreamCard(
                                 playlistId: playlist.id,
@@ -109,7 +138,8 @@ struct FavoritesView: View {
                                 categoryName: item.categoryName,
                                 posterWidth: posterMetrics.categoryGridPosterWidth,
                                 posterHeight: posterMetrics.categoryGridPosterHeight,
-                                imageLoadProfile: ImageLoadProfile.grid
+                                imageLoadProfile: ImageLoadProfile.grid,
+                                watchProgress: vodProgressMap[String(item.stream.streamId)]
                             )
                         }
                     }
@@ -121,12 +151,12 @@ struct FavoritesView: View {
     
     @ViewBuilder
     private var seriesGrid: some View {
-        if favoriteSeries.isEmpty {
-            emptyState(icon: "play.tv", message: L("favorites.empty.series"))
+        if displayedSeries.isEmpty {
+            emptyState(icon: "play.tv", message: trimmedQuery.isEmpty ? L("favorites.empty.series") : L("list.no_result"))
         } else {
             ScrollView {
                 LazyVGrid(columns: gridColumns, spacing: posterMetrics.gridRowSpacing) {
-                    ForEach(favoriteSeries) { item in
+                    ForEach(displayedSeries) { item in
                         NavigationLink(destination: SeriesDetailView(playlist: playlist, series: item.series)) {
                             SeriesCard(
                                 playlistId: playlist.id,
@@ -134,7 +164,8 @@ struct FavoritesView: View {
                                 categoryName: item.categoryName,
                                 posterWidth: posterMetrics.categoryGridPosterWidth,
                                 posterHeight: posterMetrics.categoryGridPosterHeight,
-                                imageLoadProfile: ImageLoadProfile.grid
+                                imageLoadProfile: ImageLoadProfile.grid,
+                                watchProgress: seriesProgressMap[String(item.series.seriesId)]
                             )
                         }
                     }

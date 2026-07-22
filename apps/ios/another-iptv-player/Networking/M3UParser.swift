@@ -159,23 +159,20 @@ enum M3UParser {
         _ rawText: String,
         collectDiagnostics: Bool
     ) throws -> (playlist: ParsedM3UPlaylist, diagnostics: ParseDiagnostics) {
-        var text = rawText
-        if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
+        // 100k+ satırlık listelerde tam metin kopyalarından kaçın: BOM Substring ile
+        // kopyasız atılır, boşluk kontrolü lazy taramadır ve satır bölme tek geçişte
+        // yapılır. `Character.isNewline` \n, \r, CRLF (tek grapheme), U+2028 ve U+2029'u
+        // kapsar — eski 4×replacingOccurrences normalizasyon zinciriyle aynı davranış.
+        var text = Substring(rawText)
+        if text.hasPrefix("\u{FEFF}") { text = text.dropFirst() }
 
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard text.contains(where: { !$0.isWhitespace }) else {
             throw M3UParserError.empty
         }
 
-        // Newline normalizasyonu: ASCII + Unicode line/paragraph separators.
-        let normalized = text
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
-            .replacingOccurrences(of: "\u{2028}", with: "\n")
-            .replacingOccurrences(of: "\u{2029}", with: "\n")
-
         // Attr değeri içine sızmış newline'ları birleştir.
         let logicalLines = joinEXTINFContinuations(
-            normalized.split(separator: "\n", omittingEmptySubsequences: false)
+            text.split(omittingEmptySubsequences: false, whereSeparator: { $0.isNewline })
         )
 
         var state = ParserState()
@@ -377,9 +374,12 @@ enum M3UParser {
         let attrs = parseAttributes(in: header)
 
         // Bozuk M3U'da title ve URL aynı satıra yapışmış olabilir.
+        // Ucuz "://" ön kontrolü: iyi biçimli satırların (%99+) regex'e hiç girmemesini
+        // sağlar — satır başına regex derlemesi 100k+ kanal importunda saniyeler yiyordu.
         var title = rawTitle
         var embedded: String? = nil
-        if let range = rawTitle.range(of: "https?://|rtmps?://|rtsps?://", options: .regularExpression) {
+        if rawTitle.contains("://"),
+           let range = rawTitle.range(of: "https?://|rtmps?://|rtsps?://", options: .regularExpression) {
             title = String(rawTitle[..<range.lowerBound]).trimmingCharacters(in: .whitespaces)
             embedded = String(rawTitle[range.lowerBound...]).trimmingCharacters(in: .whitespaces)
         }
@@ -397,8 +397,10 @@ enum M3UParser {
     ///     http://server/movie.mp4
     ///
     /// İlk iki satır mantıksal olarak tek EXTINF'tir. Yeni `#EXTINF:` görüldüğünde birleştirme durdurulur.
-    private static func joinEXTINFContinuations(_ lines: [Substring]) -> [String] {
-        var result: [String] = []
+    private static func joinEXTINFContinuations(_ lines: [Substring]) -> [Substring] {
+        // Substring döner: normal satırlar için kopya yok; yalnızca (nadir) birleştirilen
+        // EXTINF'ler kendi String buffer'ını taşır.
+        var result: [Substring] = []
         result.reserveCapacity(lines.count)
         var i = 0
         let n = lines.count
@@ -406,7 +408,7 @@ enum M3UParser {
             let raw = lines[i]
             let trimmed = raw.trimmingCharacters(in: .whitespaces)
             guard trimmed.hasPrefix(Tag.extinf), hasOddQuoteCount(trimmed) else {
-                result.append(String(raw))
+                result.append(raw)
                 i += 1
                 continue
             }
@@ -420,7 +422,7 @@ enum M3UParser {
                 j += 1
                 if !hasOddQuoteCount(buffer) { break }
             }
-            result.append(buffer)
+            result.append(Substring(buffer))
             i = j
         }
         return result
@@ -560,7 +562,8 @@ enum M3UParser {
                 return
             }
         }
-        channel.name = "Kanal \(channelsCount + 1)"
+        // Import anında aktif dile göre yazılır; sabit Türkçe "Kanal N" tüm dillerde görünüyordu.
+        channel.name = L("misc.channel_fallback_name", channelsCount + 1)
     }
 
     private static func collectNoGroupSample(_ diag: inout ParseDiagnostics, channel: ParsedM3UChannel, rawExtinf: String) {

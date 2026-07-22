@@ -23,6 +23,7 @@ struct M3UPlaylistSettingsView: View {
     @AppStorage("player.pipEnabled") private var pipEnabled = true
     @AppStorage("player.continuePlayingInBackground") private var continuePlayingInBackground = true
     @AppStorage("player.speedUpOnLongPress") private var speedUpOnLongPress = true
+    @AppStorage("player.autoPlayNextEpisode") private var autoPlayNextEpisode = true
     @AppStorage("download.wifi_only") private var downloadWifiOnly = false
     @State private var downloadUsedBytes: Int64 = 0
     @State private var showingDeleteAllDownloadsAlert = false
@@ -142,6 +143,14 @@ struct M3UPlaylistSettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L("settings.player.longpress.title"))
                         Text(L("settings.player.longpress.desc"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Toggle(isOn: $autoPlayNextEpisode) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L("settings.player.autonext.title"))
+                        Text(L("settings.player.autonext.desc"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -348,7 +357,7 @@ struct M3UPlaylistSettingsView: View {
             syncMessage = nil
         }
         do {
-            let content = try M3UService().readLocal(url: url)
+            let content = try await M3UService().readLocalAsync(url: url)
             syncMessage = L("settings.m3u.parsing")
             let parsed = try await M3UParser.parseAsync(content)
             syncMessage = L("settings.m3u.saving")

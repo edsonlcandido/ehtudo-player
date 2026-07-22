@@ -89,7 +89,7 @@ struct M3UChannelsView: View {
                 entries: displayGroups.map { g in
                     CategoryPickerSheet.Entry(
                         id: g,
-                        name: g,
+                        name: M3UContentStore.displayName(forGroup: g),
                         count: displayChannelsByGroup[g]?.count ?? 0
                     )
                 },
@@ -172,6 +172,11 @@ struct M3UChannelsView: View {
                     }
                 }
             }
+            .refreshable {
+                // Bağımsız Task: refreshable iptali isteklere yayılmasın (bkz. LiveStreamsView).
+                let work = Task { await refreshCatalog() }
+                await work.value
+            }
             .onChange(of: pendingScrollTarget) { _, target in
                 guard let target else { return }
                 withAnimation(.easeOut(duration: 0.25)) {
@@ -182,6 +187,30 @@ struct M3UChannelsView: View {
                     pendingScrollTarget = nil
                 }
             }
+        }
+    }
+
+    /// Pull-to-refresh: URL tabanlı playlist'te tam yeniden indirme + import (ayarlardaki
+    /// yenilemeyle aynı yol); yerel dosyalı playlist'te yalnızca DB'den yeniden yükleme
+    /// (dosya yeniden seçilmeden içerik değişemez).
+    private func refreshCatalog() async {
+        let url = playlist.serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !url.isEmpty else {
+            await store.reloadIfActive(playlist: playlist)
+            return
+        }
+        do {
+            let content = try await M3UService().fetchRemote(urlString: url)
+            let parsed = try await M3UParser.parseAsync(content)
+            try await M3UImporter.replace(
+                playlist: playlist,
+                channels: parsed.channels,
+                epgURL: parsed.epgURL
+            )
+            await store.reloadIfActive(playlist: playlist)
+        } catch {
+            // Store'un hata alanına yaz; başarısız yenileme mevcut içeriği bozmaz.
+            store.loadError = error.localizedDescription
         }
     }
 
@@ -236,9 +265,11 @@ struct M3UChannelsView: View {
     }
 
     /// Prev/next için aynı grubun kanal listesini queue olarak kullan.
+    /// Anahtar, store'un grupladığı KANONİK etiket olmalı — L() ile localize edilmiş
+    /// etiket store anahtarıyla eşleşmez ve queue tek kanala düşer (prev/next ölür).
     private func queueForChannel(_ channel: DBM3UChannel) -> [DBM3UChannel] {
         let key = channel.groupTitle?.trimmingCharacters(in: .whitespaces).nonEmptyOrNil
-            ?? L("m3u.ungrouped_label")
+            ?? M3UContentStore.ungroupedLabel
         return displayChannelsByGroup[key] ?? [channel]
     }
 
@@ -296,7 +327,7 @@ struct M3UGroupShelfRow: View, Equatable {
                     M3UGroupDetailView(playlist: playlist, group: group)
                 } label: {
                     HStack(spacing: 6) {
-                        Text(group)
+                        Text(M3UContentStore.displayName(forGroup: group))
                             .font(.headline)
                         Image(systemName: "chevron.right")
                             .font(.caption.weight(.semibold))
@@ -352,7 +383,12 @@ struct M3UGroupShelfRow: View, Equatable {
             .compactMap { $0.tvgLogo }
             .compactMap { URL(string: $0) }
         guard !urls.isEmpty else { return }
-        ListImagePrefetch.start(urls: urls, posterMetrics: posterMetrics, isShelf: true)
+        ListImagePrefetch.start(
+            urls: urls,
+            width: posterMetrics.liveShelfIcon,
+            height: posterMetrics.liveShelfIcon,
+            loadProfile: .shelf
+        )
     }
 }
 
@@ -364,10 +400,6 @@ struct M3UChannelCard: View {
     var iconSize: CGFloat = 120
     var imageLoadProfile: ImageLoadProfile = .standard
     var onChannelSelected: ((DBM3UChannel) -> Void)? = nil
-
-    @ObservedObject private var favorites = M3UFavoriteStore.shared
-
-    private var isFavorite: Bool { favorites.isFavorite(channelId: channel.id) }
 
     var body: some View {
         Button {
@@ -394,8 +426,13 @@ struct M3UChannelCard: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
+            // Store'u @ObservedObject ile gözlemek, tek bir favori değişiminde lazy
+            // stack'in yaşattığı BİNLERCE kartı yeniden render ediyordu. Favori durumu
+            // yalnız burada gerekli; menü her açılışta yeniden kurulduğundan anlık
+            // okumak yeterli.
+            let isFavorite = M3UFavoriteStore.shared.isFavorite(channelId: channel.id)
             Button {
-                Task { await favorites.toggle(channel: channel) }
+                Task { await M3UFavoriteStore.shared.toggle(channel: channel) }
             } label: {
                 Label(isFavorite ? L("favorites.remove") : L("favorites.add"),
                       systemImage: isFavorite ? "star.slash" : "star")
@@ -442,7 +479,7 @@ struct M3UGroupDetailView: View {
                 present(channel)
             }
         )
-        .navigationTitle(group)
+        .navigationTitle(M3UContentStore.displayName(forGroup: group))
         .navigationBarTitleDisplayMode(.large)
         .toolbar(.hidden, for: .tabBar)
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: L("live.search_placeholder"))
@@ -499,7 +536,7 @@ struct M3UGroupGridContent: View {
             .compactMap { $0.tvgLogo }
             .compactMap { URL(string: $0) }
         guard !urls.isEmpty else { return }
-        ListImagePrefetch.start(urls: urls, posterMetrics: posterMetrics)
+        ListImagePrefetch.start(urls: urls, width: posterMetrics.liveGridIconSize, height: posterMetrics.liveGridIconSize, loadProfile: .grid)
     }
 
     var body: some View {
@@ -651,7 +688,9 @@ struct M3UPlayerShell: View {
         let snapshotNames = useStore ? m3uStore.groupNames : []
         let snapshotByGroup = useStore ? m3uStore.channelsByGroup : [:]
         let snapshotQueue = useStore ? [] : queue
-        let ungroupedLabel = L("m3u.ungrouped_label")
+        // Store anahtarlarıyla ve hidden-category id'leriyle tutarlı kalması için
+        // kanonik etiket; başlıklar render sırasında displayName ile localize edilir.
+        let ungroupedLabel = M3UContentStore.ungroupedLabel
         let hiddenIds = hiddenStore.hiddenIds(playlistId: playlist.id, type: M3UChannelsView.hiddenCategoryType)
 
         let result = await Task.detached(priority: .userInitiated) { () -> [ChannelPanelSection] in
@@ -708,7 +747,7 @@ struct M3UPlayerShell: View {
         return groupOrder.map { key in
             ChannelPanelSection(
                 id: key,
-                title: key,
+                title: M3UContentStore.displayName(forGroup: key),
                 items: (groups[key] ?? []).map { ch in
                     ChannelPanelItem(
                         id: ch.id,
@@ -744,7 +783,7 @@ struct M3UPlayerShell: View {
                 )
             }
             if !items.isEmpty {
-                result.append(ChannelPanelSection(id: name, title: name, items: items))
+                result.append(ChannelPanelSection(id: name, title: M3UContentStore.displayName(forGroup: name), items: items))
             }
         }
         return result

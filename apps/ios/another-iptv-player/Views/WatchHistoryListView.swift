@@ -14,6 +14,8 @@ struct WatchHistoryListView: View {
 
     @Query<RecentWatchHistoryRequest> private var items: [DBWatchHistory]
     @State private var searchText = ""
+    @State private var debouncedQuery = ""
+    @State private var debounceTask: Task<Void, Never>?
     @State private var showClearConfirm = false
     @Environment(\.appDatabase) private var appDatabase
 
@@ -28,7 +30,7 @@ struct WatchHistoryListView: View {
     }
 
     private var filtered: [DBWatchHistory] {
-        let q = searchText.trimmingCharacters(in: .whitespaces)
+        let q = debouncedQuery.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return items }
         return items.filter { CatalogTextSearch.matches(search: q, text: $0.title) }
     }
@@ -43,6 +45,9 @@ struct WatchHistoryListView: View {
     }
 
     var body: some View {
+        // Tek geçiş: `filtered` computed'ını hem isEmpty hem ForEach için ayrı ayrı
+        // okumak her render'da 500 satırı iki kez normalize edip tarıyordu.
+        let results = filtered
         Group {
             if items.isEmpty {
                 ContentUnavailableView(
@@ -50,7 +55,7 @@ struct WatchHistoryListView: View {
                     systemImage: "clock.arrow.circlepath",
                     description: Text(L("history.empty.message"))
                 )
-            } else if filtered.isEmpty {
+            } else if results.isEmpty {
                 ContentUnavailableView(
                     L("favorites.empty.no_result.title"),
                     systemImage: "magnifyingglass",
@@ -62,7 +67,7 @@ struct WatchHistoryListView: View {
                         columns: [GridItem(.adaptive(minimum: 160), spacing: 16)],
                         spacing: 20
                     ) {
-                        ForEach(filtered) { item in
+                        ForEach(results) { item in
                             HistoryCardGridItem(item: item) {
                                 onPlay(item)
                             }
@@ -76,6 +81,20 @@ struct WatchHistoryListView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
         .searchable(text: $searchText, prompt: L("history.search_placeholder"))
+        .onChange(of: searchText) { _, new in
+            debounceTask?.cancel()
+            let trimmed = new.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty {
+                debouncedQuery = ""
+                return
+            }
+            debounceTask = Task {
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                guard !Task.isCancelled else { return }
+                await MainActor.run { debouncedQuery = new }
+            }
+        }
+        .onDisappear { debounceTask?.cancel(); debounceTask = nil }
         .toolbar {
             if !items.isEmpty {
                 ToolbarItem(placement: .navigationBarTrailing) {

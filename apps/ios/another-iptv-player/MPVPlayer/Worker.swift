@@ -14,6 +14,12 @@ final class Worker {
 
   init() {
     thread = Thread(block: loop)
+    // Video karelerini üreten thread: varsayılan QoS ile bırakılırsa Nuke decode /
+    // SwiftUI layout yükü altında scheduler tarafından geri plana atılıp tam
+    // kullanıcı etkileşimi anında kare düşürüyordu. Beslediği display queue
+    // .userInteractive olduğundan aynı seviyeye çek.
+    thread.qualityOfService = .userInteractive
+    thread.name = "mpv.render.worker"
     thread.start()
   }
 

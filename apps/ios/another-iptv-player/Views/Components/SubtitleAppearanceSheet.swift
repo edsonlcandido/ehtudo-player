@@ -40,6 +40,7 @@ struct SubtitleAppearanceSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(L("subtitle.apply")) {
+                        didApply = true
                         player.applySubtitleAppearanceSettings(draft)
                         dismiss()
                     }
@@ -49,8 +50,18 @@ struct SubtitleAppearanceSheet: View {
             .onChange(of: draft.delaySeconds) { _, new in
                 player.applySubtitleDelaySeconds(new)
             }
+            // Gecikme slider'ı canlı önizleme için anında mpv'ye gider; Apply'sız
+            // kapanışta eski değere dönmezsek oynatma, sheet'in bir daha göstermeyeceği
+            // bir gecikmeyle kalıyordu.
+            .onDisappear {
+                if !didApply {
+                    player.applySubtitleDelaySeconds(initial.delaySeconds)
+                }
+            }
         }
     }
+
+    @State private var didApply = false
 
     // MARK: - Sections
 

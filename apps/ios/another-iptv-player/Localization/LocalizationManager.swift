@@ -129,7 +129,10 @@ func L(_ key: String) -> String {
 }
 
 /// Parametreli format helper: `L("episode_count", 10)` → `"10 episodes"`.
+/// `String.localizedStringWithFormat` kullanılır ki Localizable.stringsdict'teki çoğul
+/// kuralları (one/few/many/other) uygulanabilsin — düz `String(format:)` bunları yok
+/// sayar ve "1 Days" gibi hatalı metin üretir.
 func L(_ key: String, _ args: CVarArg...) -> String {
     let format = LocalizationManager.resolveLocalizedString(for: key)
-    return String(format: format, arguments: args)
+    return withVaList(args) { NSString(format: format, locale: nil, arguments: $0) as String }
 }

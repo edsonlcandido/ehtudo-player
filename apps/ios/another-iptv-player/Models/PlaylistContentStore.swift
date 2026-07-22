@@ -152,6 +152,52 @@ final class PlaylistContentStore: ObservableObject {
         }
     }
 
+    /// Film detay fetch'i DB'ye yazıldıktan sonra bellek kataloğundaki kopyayı da
+    /// güncelle — yoksa aynı filme her yeniden girişte metadataLoaded=false görünüp
+    /// gereksiz ağ isteği ve spinner flaşı yaşanıyordu.
+    func applyVODMetadata(_ updated: DBVODStream) {
+        guard activePlaylistId == updated.playlistId else { return }
+        if let i = vodStreams.firstIndex(where: { $0.stream.streamId == updated.streamId }) {
+            vodStreams[i] = VODWithCategory(stream: updated, categoryName: vodStreams[i].categoryName)
+        }
+        // Uncategorized remap'i nedeniyle bucket anahtarı categoryId'den farklı olabilir.
+        for key in [updated.categoryId ?? "", Self.uncategorizedCategoryId] {
+            if var bucket = vodStreamsByCategoryId[key],
+               let j = bucket.firstIndex(where: { $0.stream.streamId == updated.streamId }) {
+                bucket[j] = VODWithCategory(stream: updated, categoryName: bucket[j].categoryName)
+                vodStreamsByCategoryId[key] = bucket
+                break
+            }
+        }
+    }
+
+    /// Dashboard'dan playlist seçicisine dönünce çağrılır: yüz binlerce satırlık
+    /// katalog kopyaları (flat + kategori sözlükleri) singleton'da kalmasın.
+    /// Yeniden girişte `loadPlaylist` zaten sıfırdan yükler.
+    func unload() {
+        loadToken = nil
+        activePlaylistId = nil
+        clearLists()
+        loadError = nil
+        loadingMessage = nil
+        isLoading = false
+    }
+
+    /// Pull-to-refresh: tam ağ senkronu + bellek yenileme. Ayarlardaki "Tümünü yenile"
+    /// ile aynı yol; hata loadError'a yazılır (senkron atomik olduğu için başarısızlıkta
+    /// yerel içerik korunur).
+    func refreshFromNetwork(playlist: Playlist) async {
+        do {
+            try await syncFromNetworkReplacingLocal(playlist: playlist) { [weak self] msg in
+                self?.loadingMessage = msg
+            }
+            await reloadFromDatabaseIfActive(playlistId: playlist.id)
+        } catch {
+            loadError = error.localizedDescription
+        }
+        loadingMessage = nil
+    }
+
     /// Ayarlar’dan tam yenileme sonrası belleği güncelle.
     func reloadFromDatabaseIfActive(playlistId: UUID) async {
         guard activePlaylistId == playlistId else { return }
@@ -185,12 +231,20 @@ final class PlaylistContentStore: ObservableObject {
         async let seriesTask = AppDatabase.shared.read { db in try Self.fetchSeriesData(playlistId: playlistId, db: db) }
 
         let (ls, vs, si) = try await (liveTask, vodTask, seriesTask)
+        // Yetim/kategorisiz streamleri sentetik "Kategorisiz" bucket'ında topla ve
+        // gerektiğinde kategori listesine görünür bir giriş ekle.
+        let liveBy = Self.mergeUncategorized(ls.byCategory, validIds: Set(cats.live.map(\.id)))
+        let vodBy = Self.mergeUncategorized(vs.byCategory, validIds: Set(cats.vod.map(\.id)))
+        let seriesBy = Self.mergeUncategorized(si.byCategory, validIds: Set(cats.series.map(\.id)))
+        liveCategories = Self.appendingUncategorized(cats.live, byCategory: liveBy, type: "live", playlistId: playlistId)
+        vodCategories = Self.appendingUncategorized(cats.vod, byCategory: vodBy, type: "vod", playlistId: playlistId)
+        seriesCategories = Self.appendingUncategorized(cats.series, byCategory: seriesBy, type: "series", playlistId: playlistId)
         liveStreams = ls.streams
-        liveStreamsByCategoryId = ls.byCategory
+        liveStreamsByCategoryId = liveBy
         vodStreams = vs.streams
-        vodStreamsByCategoryId = vs.byCategory
+        vodStreamsByCategoryId = vodBy
         seriesItems = si.items
-        seriesItemsByCategoryId = si.byCategory
+        seriesItemsByCategoryId = seriesBy
         streamsLoaded = true
     }
 
@@ -233,76 +287,109 @@ final class PlaylistContentStore: ObservableObject {
         return CategoriesBundle(live: live, vod: vod, series: series)
     }
 
+    /// Kategorisi olmayan/yetim streamlerin toplandığı sentetik kategori id'si.
+    /// HiddenCategoryStore bu id ile persist edebilsin diye sabittir.
+    nonisolated static let uncategorizedCategoryId = "__uncategorized__"
+
+    // Xtream panelleri category_id'si null/'0'/kategori listesinde olmayan streamler
+    // döndürebilir. INNER JOIN bunları tüm ekranlardan sessizce düşürüyordu; LEFT JOIN +
+    // COALESCE ile korunur ve "Kategorisiz" başlığı altında gösterilirler.
     private static func fetchLiveStreamsData(playlistId: UUID, db: Database) throws -> LiveStreamsData {
         let sql = """
-        SELECT liveStream.*, category.name AS categoryName
+        SELECT liveStream.*, COALESCE(category.name, ?) AS categoryName
         FROM liveStream
-        JOIN category ON liveStream.categoryId = category.id
+        LEFT JOIN category ON liveStream.categoryId = category.id
                      AND liveStream.playlistId = category.playlistId
                      AND category.type = 'live'
         WHERE liveStream.playlistId = ?
         ORDER BY liveStream.sortIndex
         """
-        let streams = try LiveStreamWithCategory.fetchAll(db, sql: sql, arguments: [playlistId])
+        let streams = try LiveStreamWithCategory.fetchAll(db, sql: sql, arguments: [L("content.uncategorized"), playlistId])
         return LiveStreamsData(streams: streams, byCategory: Dictionary(grouping: streams) { $0.stream.categoryId ?? "" })
     }
 
     private static func fetchVODStreamsData(playlistId: UUID, db: Database) throws -> VODStreamsData {
         let sql = """
-        SELECT vodStream.*, category.name AS categoryName
+        SELECT vodStream.*, COALESCE(category.name, ?) AS categoryName
         FROM vodStream
-        JOIN category ON vodStream.categoryId = category.id
+        LEFT JOIN category ON vodStream.categoryId = category.id
                      AND vodStream.playlistId = category.playlistId
                      AND category.type = 'vod'
         WHERE vodStream.playlistId = ?
         ORDER BY vodStream.sortIndex
         """
-        let streams = try VODWithCategory.fetchAll(db, sql: sql, arguments: [playlistId])
+        let streams = try VODWithCategory.fetchAll(db, sql: sql, arguments: [L("content.uncategorized"), playlistId])
         return VODStreamsData(streams: streams, byCategory: Dictionary(grouping: streams) { $0.stream.categoryId ?? "" })
     }
 
     private static func fetchSeriesData(playlistId: UUID, db: Database) throws -> SeriesData {
         let sql = """
-        SELECT series.*, category.name AS categoryName
+        SELECT series.*, COALESCE(category.name, ?) AS categoryName
         FROM series
-        JOIN category ON series.categoryId = category.id
+        LEFT JOIN category ON series.categoryId = category.id
                      AND series.playlistId = category.playlistId
                      AND category.type = 'series'
         WHERE series.playlistId = ?
         ORDER BY series.sortIndex
         """
-        let items = try SeriesWithCategory.fetchAll(db, sql: sql, arguments: [playlistId])
+        let items = try SeriesWithCategory.fetchAll(db, sql: sql, arguments: [L("content.uncategorized"), playlistId])
         return SeriesData(items: items, byCategory: Dictionary(grouping: items) { $0.series.categoryId ?? "" })
+    }
+
+    /// Kategorisi bilinen id'lerde olmayan (nil veya yetim) bucket'ları sentetik
+    /// "Kategorisiz" anahtarında birleştirir.
+    private static func mergeUncategorized<T>(
+        _ byCategory: [String: [T]], validIds: Set<String>
+    ) -> [String: [T]] {
+        var result: [String: [T]] = [:]
+        for (key, items) in byCategory {
+            let target = (key.isEmpty || !validIds.contains(key)) ? uncategorizedCategoryId : key
+            result[target, default: []].append(contentsOf: items)
+        }
+        return result
+    }
+
+    /// Sentetik "Kategorisiz" bucket'ı doluysa kategori listesinin sonuna görünür bir
+    /// kategori ekler; boşsa listeyi aynen döndürür.
+    private static func appendingUncategorized(
+        _ categories: [DBCategory],
+        byCategory: [String: [some Any]],
+        type: String,
+        playlistId: UUID
+    ) -> [DBCategory] {
+        guard let orphans = byCategory[uncategorizedCategoryId], !orphans.isEmpty else { return categories }
+        var result = categories
+        result.append(DBCategory(
+            id: uncategorizedCategoryId,
+            name: L("content.uncategorized"),
+            parentId: nil,
+            type: type,
+            sortIndex: (categories.map(\.sortIndex).max() ?? -1) + 1,
+            playlistId: playlistId
+        ))
+        return result
     }
 
     // MARK: - Ağ senkronu (Xtream → SQLite)
 
     /// Ayarlar ekranı: aşamalı ilerleme mesajı ile tam yenileme.
+    /// Yerel içerik, tüm ağ istekleri başarıyla tamamlanana kadar SİLİNMEZ: silme ve yeniden
+    /// yazma tek transaction'da yapılır ki panel/ağ hatası çalışan kütüphaneyi boşaltmasın.
     func syncFromNetworkReplacingLocal(playlist: Playlist, progress: @escaping (String) -> Void) async throws {
-        progress(L("phase.clearing_content"))
         let client = XtreamAPIClient(playlist: playlist)
         let pid = playlist.id
 
-        try await AppDatabase.shared.write { db in
-            try db.execute(sql: "DELETE FROM category WHERE playlistId = ?", arguments: [pid])
-            try db.execute(sql: "DELETE FROM liveStream WHERE playlistId = ?", arguments: [pid])
-            try db.execute(sql: "DELETE FROM vodStream WHERE playlistId = ?", arguments: [pid])
-            try db.execute(sql: "DELETE FROM series WHERE playlistId = ?", arguments: [pid])
-        }
-
+        // Altı endpoint bağımsız — paralel çekim yenileme süresini ciddi kısaltır.
         progress(L("phase.fetch_categories"))
-        let liveCats = try await client.getLiveCategories()
-        let vodCats = try await client.getVODCategories()
-        let seriesCats = try await client.getSeriesCategories()
-
-        progress(L("phase.fetch_live"))
-        let liveStreamsAPI = try await client.getLiveStreams()
-
-        progress(L("phase.fetch_movies"))
-        let vods = try await client.getVODStreams()
-
-        progress(L("phase.fetch_series"))
-        let series = try await client.getSeries()
+        async let liveCatsTask = client.getLiveCategories()
+        async let vodCatsTask = client.getVODCategories()
+        async let seriesCatsTask = client.getSeriesCategories()
+        async let liveStreamsTask = client.getLiveStreams()
+        async let vodsTask = client.getVODStreams()
+        async let seriesTask = client.getSeries()
+        let (liveCats, vodCats, seriesCats, liveStreamsAPI, vods, series) = try await (
+            liveCatsTask, vodCatsTask, seriesCatsTask, liveStreamsTask, vodsTask, seriesTask
+        )
 
         // Yetişkin içerik filtresi
         let filterAdult = playlist.filterAdultContent
@@ -312,6 +399,12 @@ final class PlaylistContentStore: ObservableObject {
 
         progress(L("phase.save_db"))
         try await AppDatabase.shared.write { db in
+            // Delete-then-insert inside one transaction: rolls back together on any error.
+            try db.execute(sql: "DELETE FROM category WHERE playlistId = ?", arguments: [pid])
+            try db.execute(sql: "DELETE FROM liveStream WHERE playlistId = ?", arguments: [pid])
+            try db.execute(sql: "DELETE FROM vodStream WHERE playlistId = ?", arguments: [pid])
+            try db.execute(sql: "DELETE FROM series WHERE playlistId = ?", arguments: [pid])
+
             for (index, cat) in liveCats.enumerated() {
                 if filterAdult, let name = cat.categoryName, AdultContentFilter.isAdultCategoryName(name) { continue }
                 let dbCat = DBCategory(id: cat.id, name: cat.categoryName ?? L("content.unnamed"), parentId: cat.parentId, type: "live", sortIndex: index, playlistId: pid)

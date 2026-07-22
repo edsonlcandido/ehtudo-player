@@ -80,14 +80,14 @@ public final class TextureSW: NSObject, ResizableTextureProtocol {
 
   private func createPixelBuffer(_ size: CGSize) {
     disposePixelBuffer()
-    textureContexts.reinit(
-      objects: [
-        TextureSWContext(size: size),
-        TextureSWContext(size: size),
-        TextureSWContext(size: size),
-      ],
-      skipCheckArgs: true
-    )
+    // 4 buffer: swap zincirindeki cooling yuvası bir buffer'ı geçici alıkoyar (bkz.
+    // SwappableObjectManager.cooling); üçlü tampon + 1. Ayırma başarısızsa (bellek
+    // baskısı, saçma stream boyutu) eksik sayıda buffer'la devam edilir — crash yok.
+    let contexts = (0 ..< 4).compactMap { _ in TextureSWContext(size: size) }
+    if contexts.count < 4 {
+      Log.error("TextureSW", "createPixelBuffer: \(contexts.count)/4 context oluşturulabildi")
+    }
+    textureContexts.reinit(objects: contexts, skipCheckArgs: true)
   }
 
   private func disposePixelBuffer() {
@@ -123,25 +123,26 @@ public final class TextureSW: NSObject, ResizableTextureProtocol {
       return
     }
 
-    let ssizePtr = ssize.withUnsafeMutableBytes {
-      $0.baseAddress?.assumingMemoryBound(to: Int32.self)
-    }
     let formatPtr = UnsafeMutablePointer(
       mutating: (format as NSString).utf8String
     )
-    let pitchPtr = withUnsafeMutablePointer(to: &pitch) { $0 }
     let bufferPtr = buffer.assumingMemoryBound(to: UInt8.self)
 
-    var params: [mpv_render_param] = [
-      mpv_render_param(type: MPV_RENDER_PARAM_SW_SIZE, data: ssizePtr),
-      mpv_render_param(type: MPV_RENDER_PARAM_SW_FORMAT, data: formatPtr),
-      mpv_render_param(type: MPV_RENDER_PARAM_SW_STRIDE, data: pitchPtr),
-      mpv_render_param(type: MPV_RENDER_PARAM_SW_POINTER, data: bufferPtr),
-      mpv_render_param(type: MPV_RENDER_PARAM_INVALID, data: nil),
-    ]
-
-    _ = mpv_render_context_update(ctx)
-    let renderErr = mpv_render_context_render(ctx, &params)
+    // Pointer'lar closure gövdesi dışında geçerli DEĞİLDİR (Swift UB); mpv çağrısı
+    // en içteki closure'da yapılmalı, pointer'lar dışarı sızdırılmamalı.
+    let renderErr: Int32 = ssize.withUnsafeMutableBufferPointer { ssizeBuf in
+      withUnsafeMutablePointer(to: &pitch) { pitchPtr in
+        var params: [mpv_render_param] = [
+          mpv_render_param(type: MPV_RENDER_PARAM_SW_SIZE, data: ssizeBuf.baseAddress),
+          mpv_render_param(type: MPV_RENDER_PARAM_SW_FORMAT, data: formatPtr),
+          mpv_render_param(type: MPV_RENDER_PARAM_SW_STRIDE, data: pitchPtr),
+          mpv_render_param(type: MPV_RENDER_PARAM_SW_POINTER, data: bufferPtr),
+          mpv_render_param(type: MPV_RENDER_PARAM_INVALID, data: nil),
+        ]
+        _ = mpv_render_context_update(ctx)
+        return mpv_render_context_render(ctx, &params)
+      }
+    }
     if renderErr < 0 {
       MPVPlayerVideoLog.always(
         "TextureSW.render",

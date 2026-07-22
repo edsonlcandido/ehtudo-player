@@ -83,6 +83,14 @@ public final class NativeVideoOutput: NSObject {
   private let frameLinkProxy = FrameLinkProxy()
   private let linkLock = NSLock()
   private var displayLink: CADisplayLink?
+  /// Ardışık boş tick sayacı (yalnız main thread'de dokunulur). Video duraklayınca /
+  /// buffer'da kalınca / hata ekranında mailbox boş döner; ~1 sn boş tick sonrası link
+  /// duraklatılır ki 60-120 Hz main-thread uyandırma (ve ProMotion'ı yüksek Hz'de
+  /// kilitleme) boşa sürmesin. Yeni kare mailbox'a düşünce link tekrar açılır.
+  private var emptyTickCount = 0
+  private static let emptyTicksBeforePause = 60
+  /// linkLock ile korunur; worker yeni kare bıraktığında yalnızca paused ise main'e sıçrar.
+  private var linkPaused = false
   /// GL’den art arda `updateCallback` + mpv’den `refresh…` tek worker döngüsünde birleşsin (kuyruk şişmesin).
   private var pendingWorkerRender = false
   private var workerDrainRunning = false
@@ -181,16 +189,19 @@ public final class NativeVideoOutput: NSObject {
     if useHW {
       // `vo=libmpv` + GLES FBO çıktısı UIImageView/CI ile doğru yönde; ekstra dikey çevirme ters gösterir.
       flipVerticalForOpenGL = false
-      texture = SafeResizableTexture(
-        TextureHW(
-          handle: handle,
-          updateCallback: { [weak self] in
-            guard let self else { return }
-            self.updateCallback()
-          }
-        )
-      )
-    } else {
+      if let hw = TextureHW(
+        handle: handle,
+        updateCallback: { [weak self] in
+          guard let self else { return }
+          self.updateCallback()
+        }
+      ) {
+        texture = SafeResizableTexture(hw)
+      } else {
+        Log.error("NativeVideoOutput", "TextureHW init failed (GL context/cache) — yazılım render'ına düşülüyor")
+      }
+    }
+    if texture == nil {
       flipVerticalForOpenGL = false
       texture = SafeResizableTexture(
         TextureSW(
@@ -299,6 +310,27 @@ public final class NativeVideoOutput: NSObject {
     }
     let buffer = unmanaged.takeRetainedValue()
     mailbox.replace(with: buffer, size: size, flipVertical: flipVerticalForOpenGL)
+    wakeDisplayLinkIfPaused()
+  }
+
+  /// Worker'dan çağrılır: link starvation nedeniyle duraklatıldıysa yeni kare için uyandır.
+  private func wakeDisplayLinkIfPaused() {
+    linkLock.lock()
+    let needsWake = linkPaused
+    linkLock.unlock()
+    guard needsWake else { return }
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.linkLock.lock()
+      if self.linkPaused, let link = self.displayLink {
+        link.isPaused = false
+        self.linkPaused = false
+      }
+      self.linkLock.unlock()
+      self.emptyTickCount = 0
+      // Uyandıran kareyi hemen teslim et; bir sonraki tick'i beklemek gecikme yaratır.
+      self.deliverLatestFrameIfAny()
+    }
   }
 
   private func installDisplayLinkIfNeeded() {
@@ -316,7 +348,20 @@ public final class NativeVideoOutput: NSObject {
 
   fileprivate func deliverLatestFrameIfAny() {
     guard !disposed else { return }
-    guard let triple = mailbox.take() else { return }
+    guard let triple = mailbox.take() else {
+      emptyTickCount += 1
+      if emptyTickCount >= Self.emptyTicksBeforePause {
+        emptyTickCount = 0
+        linkLock.lock()
+        if !linkPaused, let link = displayLink {
+          link.isPaused = true
+          linkPaused = true
+        }
+        linkLock.unlock()
+      }
+      return
+    }
+    emptyTickCount = 0
     let (buffer, size, flip) = triple
     onFrame(buffer, size, flip)
   }

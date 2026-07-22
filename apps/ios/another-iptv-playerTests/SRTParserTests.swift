@@ -27,11 +27,7 @@ struct SRTParserTests {
         #expect(e.text == "Hello world")
     }
 
-    // Disabled: SRTParser uses Scanner with default whitespace+newline skipping,
-    // so blank-line separators between entries are eaten — all entries collapse into
-    // entry #1's text. See SRTParser.swift parse(content:) inner while loop.
-    // Re-enable once the parser switches off auto-skip or rewrites block-by-block.
-    @Test(.disabled("known bug: multi-block SRT collapses into one entry"))
+    @Test
     func parsesMultipleEntries() throws {
         let srt = """
         1

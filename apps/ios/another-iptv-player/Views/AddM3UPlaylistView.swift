@@ -39,7 +39,11 @@ struct AddM3UPlaylistView: View {
     private var canSave: Bool {
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty, !isLoading else { return false }
         if hasLocalFile { return true }
-        return !url.trimmingCharacters(in: .whitespaces).isEmpty
+        let trimmedURL = url.trimmingCharacters(in: .whitespaces)
+        // Düzenlemede kaynak değişmediyse yalnız ad güncellenir; yerel dosyadan
+        // eklenmiş playlist'lerde serverURL boştur, boş URL kaydı engellememeli.
+        if let editing = editingPlaylist, trimmedURL == editing.serverURL { return true }
+        return !trimmedURL.isEmpty
     }
 
     var body: some View {
@@ -134,6 +138,9 @@ struct AddM3UPlaylistView: View {
                 Text(errorMessage ?? L("common.unknown_error"))
             })
         }
+        // Uzun import sırasında yanlışlıkla aşağı kaydırma sheet'i kapatıp Task'ı
+        // görünmez şekilde arka planda bırakıyordu.
+        .interactiveDismissDisabled(isLoading)
     }
 
     // MARK: - File Picker
@@ -152,13 +159,19 @@ struct AddM3UPlaylistView: View {
             showError = true
         case .success(let urls):
             guard let url = urls.first else { return }
-            do {
-                let content = try M3UService().readLocal(url: url)
-                localContent = content
-                localFileName = url.lastPathComponent
-            } catch {
-                errorMessage = error.localizedDescription
-                showError = true
+            isLoading = true
+            progressMessage = L("common.loading")
+            Task {
+                do {
+                    let content = try await M3UService().readLocalAsync(url: url)
+                    localContent = content
+                    localFileName = url.lastPathComponent
+                } catch {
+                    errorMessage = error.localizedDescription
+                    showError = true
+                }
+                isLoading = false
+                progressMessage = nil
             }
         }
     }
@@ -220,6 +233,33 @@ struct AddM3UPlaylistView: View {
         let trimmedURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        // Source unchanged while editing (no new file picked, URL untouched — including
+        // the always-empty URL of local-file playlists): only update the name. Without
+        // this, local-file playlists could never be renamed at all, and URL playlists
+        // re-downloaded the entire list just to change the name.
+        if let editing = editingPlaylist, !hasLocalFile, trimmedURL == editing.serverURL {
+            var updated = editing
+            updated.name = trimmedName
+            do {
+                try await AppDatabase.shared.write { db in
+                    try updated.save(db)
+                }
+                await MainActor.run {
+                    self.isLoading = false
+                    self.progressMessage = nil
+                    self.dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    self.errorMessage = error.localizedDescription
+                    self.showError = true
+                    self.isLoading = false
+                    self.progressMessage = nil
+                }
+            }
+            return
+        }
+
         // Xtream-style get.php links get connected through the Xtream API when possible:
         // many panels block get.php downloads, and the API unlocks VOD/series/EPG anyway.
         // Only for new playlists — converting an existing M3U playlist would orphan its
@@ -236,7 +276,7 @@ struct AddM3UPlaylistView: View {
             serverURL: hasLocalFile ? "" : trimmedURL,
             username: "",
             password: "",
-            filterAdultContent: false,
+            filterAdultContent: editingPlaylist?.filterAdultContent ?? false,
             type: .m3u,
             m3uEpgURL: nil
         )
