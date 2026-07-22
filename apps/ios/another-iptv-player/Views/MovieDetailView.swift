@@ -36,6 +36,9 @@ struct MovieDetailView: View {
 
     private var resumeMs: Int? {
         guard let h = watchHistory, h.lastTimeMs > 5000 else { return nil }
+        // Bitmiş (≥%98) filmde "Devam et" son saniyelere ışınlıyordu; nil dönünce
+        // birincil aksiyon baştan izlemeye düşer (resumeProgress ile tutarlı).
+        if h.durationMs > 0, Double(h.lastTimeMs) / Double(h.durationMs) >= 0.98 { return nil }
         return h.lastTimeMs
     }
 
@@ -197,7 +200,9 @@ struct MovieDetailView: View {
     }
 
     private func presentMoviePlayer(resume: Bool, localOverrideURL: URL?) {
-        let r = resume ? watchHistory?.lastTimeMs : nil
+        // resumeMs sınırlı (bitmiş film → nil); ham lastTimeMs kullanmak bitmiş filmde
+        // "İzle"ye basınca bile sona sıçratıyordu.
+        let r = resume ? resumeMs : nil
         let originStreamId = currentMovie.streamId
         let navigateToDetail: (String, String) -> Void = { type, id in
             guard type == "vod" else {
@@ -267,9 +272,13 @@ struct MovieDetailView: View {
         let client = XtreamAPIClient(playlist: playlist)
         do {
             let response = try await client.getVODInfo(vodId: movie.streamId)
-            
-            try await AppDatabase.shared.write { db in
-                var updatedMovie = currentMovie
+
+            // @Query destekli currentMovie'yi MAIN actor'da kopyala: write closure'ı
+            // GRDB'nin arka plan writer kuyruğunda koşar ve SwiftUI property-wrapper
+            // state'ini oradan okumak veri yarışıdır.
+            let base = await MainActor.run { currentMovie }
+            let saved: DBVODStream = try await AppDatabase.shared.write { db in
+                var updatedMovie = base
                 updatedMovie.metadataLoaded = true
                 if let i = response.info {
                     updatedMovie.cast = i.cast
@@ -289,9 +298,13 @@ struct MovieDetailView: View {
                     }
                 }
                 try updatedMovie.update(db)
+                return updatedMovie
             }
-            
-            await MainActor.run { self.isLoading = false }
+
+            await MainActor.run {
+                PlaylistContentStore.shared.applyVODMetadata(saved)
+                self.isLoading = false
+            }
         } catch {
             await MainActor.run {
                 self.errorMessage = error.localizedDescription

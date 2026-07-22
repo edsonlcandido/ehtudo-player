@@ -46,6 +46,10 @@ struct SeriesView: View {
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let loadError = contentStore.loadError, debouncedQuery.isEmpty {
+                    CatalogLoadErrorView(message: loadError) {
+                        Task { await contentStore.loadPlaylist(playlist) }
+                    }
                 } else {
                     VStack(spacing: 12) {
                         Image(systemName: "play.tv")
@@ -88,6 +92,11 @@ struct SeriesView: View {
                                 .id(category.id)
                             }
                         }
+                    }
+                    .refreshable {
+                        // Bağımsız Task: refreshable iptali isteklere yayılmasın (bkz. LiveStreamsView).
+                        let work = Task { await contentStore.refreshFromNetwork(playlist: playlist) }
+                        await work.value
                     }
                     .onChange(of: pendingScrollTarget) { _, target in
                         guard let target else { return }
@@ -427,7 +436,13 @@ struct SeriesCategoryShelfRow: View, Equatable {
         let urls = list.prefix(SeriesCategoryShelf.prefetchHeadCount)
             .compactMap { $0.series.cover }
             .compactMap { URL(string: $0) }
-        ListImagePrefetch.start(urls: urls, posterMetrics: posterMetrics, isShelf: true)
+        ListImagePrefetch.start(
+            urls: urls,
+            width: posterMetrics.shelfPosterWidth,
+            height: posterMetrics.shelfPosterHeight,
+            contentMode: .fill,
+            loadProfile: .shelf
+        )
     }
 }
 
@@ -581,11 +596,11 @@ struct SeriesCategoryContent: View {
                 }
                 .onChange(of: items) { _, newValue in
                     let urls = newValue.compactMap { $0.series.cover }.compactMap { URL(string: $0) }
-                    ListImagePrefetch.start(urls: urls, posterMetrics: posterMetrics)
+                    ListImagePrefetch.start(urls: urls, width: posterMetrics.categoryGridPosterWidth, height: posterMetrics.categoryGridPosterHeight, contentMode: .fill, loadProfile: .grid)
                 }
                 .onAppear {
                     let urls = items.compactMap { $0.series.cover }.compactMap { URL(string: $0) }
-                    ListImagePrefetch.start(urls: urls, posterMetrics: posterMetrics)
+                    ListImagePrefetch.start(urls: urls, width: posterMetrics.categoryGridPosterWidth, height: posterMetrics.categoryGridPosterHeight, contentMode: .fill, loadProfile: .grid)
                 }
             }
         }
@@ -786,7 +801,7 @@ struct SeriesDetailView: View {
                 }
 
                 if let cast = currentSeries.cast?.trimmingCharacters(in: .whitespacesAndNewlines), !cast.isEmpty {
-                    DetailInfoTextBlock(label: "Oyuncular", value: cast, lineLimit: 3)
+                    DetailInfoTextBlock(label: L("movie.cast"), value: cast, lineLimit: 3)
                 }
 
                 seasonsSection
@@ -830,7 +845,6 @@ struct SeriesDetailView: View {
 
                 DetailSeasonTabBar(seasons: seasons, selectedId: $selectedSeasonId)
                     .onAppear {
-                        prefetchSeasonCovers(seasons)
                         if selectedSeasonId == nil {
                             Task { selectedSeasonId = await resolveInitialSeasonId(from: seasons) }
                         }
@@ -899,10 +913,9 @@ struct SeriesDetailView: View {
         }
     }
 
-    private func prefetchSeasonCovers(_ list: [DBSeason]) {
-        let urls = list.compactMap(\.cover).compactMap { URL(string: $0) }
-        ListImagePrefetch.start(urls: urls, posterMetrics: posterMetrics)
-    }
+    // Sezon kapakları hiçbir yerde render edilmiyor; prefetch etmek yalnızca boşa ağ
+    // trafiği ve pil tüketiyordu (bkz. inceleme bulgusu). Kapaklar ileride gösterilirse
+    // render parametreleriyle birebir aynı prefetch yeniden eklenmeli.
 
     /// En son izlenen bölümün sezonunu döner; izlenmiş bölüm yoksa ilk sezonu döner.
     private func resolveInitialSeasonId(from seasons: [DBSeason]) async -> String? {
@@ -976,7 +989,7 @@ struct SeriesDetailView: View {
                 let episodesBySeason = info.episodesBySeasonNumber
 
                 for (seasonNum, apiSeason) in info.resolvedSeasons {
-                    let seasonId = "\(series.seriesId)_\(seasonNum)"
+                    let seasonId = DBSeason.scopedId(playlistId: playlist.id, seriesId: series.seriesId, seasonNumber: seasonNum)
                     let eps = episodesBySeason[seasonNum] ?? []
 
                     let dbSeason = DBSeason(
@@ -995,7 +1008,7 @@ struct SeriesDetailView: View {
 
                     for ep in eps {
                         let dbEp = DBEpisode(
-                            id: ep.id ?? UUID().uuidString,
+                            id: DBEpisode.scopedId(playlistId: playlist.id, panelEpisodeId: ep.id),
                             episodeId: ep.id,
                             episodeNum: ep.episodeNum,
                             title: ep.title,
@@ -1060,15 +1073,21 @@ struct SeriesDetailView: View {
 /// @Query + `.id(seasonId)` ScrollView kaydırma konumunu sıfırlıyordu; sezon değişince aynı panelde abonelik yenilenir.
 private final class SeasonEpisodesObserver: ObservableObject {
     @Published private(set) var episodes: [DBEpisode] = []
+    /// İlk yayın gelene dek true olmaz — "bu sezonda bölüm yok" metni yükleme
+    /// sırasında yanıp sönmesin diye panel önce yükleme durumunu gösterir.
+    @Published private(set) var hasLoaded = false
     private var cancellable: AnyCancellable?
 
     func load(seasonId: String, db: AppDatabase) {
         cancellable?.cancel()
+        hasLoaded = false
+        episodes = []
         cancellable = EpisodesRequest(seasonId: seasonId)
             .publisher(in: db)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] list in
                 self?.episodes = list
+                self?.hasLoaded = true
             }
     }
 
@@ -1091,7 +1110,11 @@ struct EpisodesPanel: View {
 
     var body: some View {
         Group {
-            if observer.episodes.isEmpty {
+            if !observer.hasLoaded {
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 20)
+            } else if observer.episodes.isEmpty {
                 Text(L("series.no_episodes_in_season"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -1116,11 +1139,11 @@ struct EpisodesPanel: View {
                 }
                 .onChange(of: observer.episodes) { _, newValue in
                     let urls = newValue.compactMap(\.cover).compactMap { URL(string: $0) }
-                    ListImagePrefetch.start(urls: urls, posterMetrics: posterMetrics)
+                    ListImagePrefetch.start(urls: urls, width: posterMetrics.episodeThumbWidth, height: posterMetrics.episodeThumbHeight, contentMode: .fill, loadProfile: .grid)
                 }
                 .onAppear {
                     let urls = observer.episodes.compactMap(\.cover).compactMap { URL(string: $0) }
-                    ListImagePrefetch.start(urls: urls, posterMetrics: posterMetrics)
+                    ListImagePrefetch.start(urls: urls, width: posterMetrics.episodeThumbWidth, height: posterMetrics.episodeThumbHeight, contentMode: .fill, loadProfile: .grid)
                 }
             }
         }
@@ -1244,6 +1267,10 @@ private struct EpisodeDetailRow: View {
                         remoteURL: remoteURL,
                         containerExtension: episode.containerExtension,
                         seriesId: seriesId,
+                        // seasonId "<playlistUUID>_<seriesId>_<seasonNum>" — son bileşen
+                        // sezon numarası. Geçilmeyince DownloadsView S02E01'i S01E02'nin
+                        // önüne diziyordu (hepsi season 0 sayılıyordu).
+                        seasonNumber: episode.seasonId.split(separator: "_").last.flatMap { Int($0) },
                         episodeNumber: episode.episodeNum,
                         compact: true
                     )

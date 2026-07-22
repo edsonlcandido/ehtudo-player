@@ -58,14 +58,11 @@ public struct MPVPlayerMaterialSeekBar: View {
           DragGesture(minimumDistance: 0)
             .onChanged { value in
               guard enabled else { return }
+              // Sürükleme boyunca yalnız UI önizlemesi güncellenir; her touch-move'da
+              // seek göndermek mpv kuyruğunu ve ağı (VOD range istekleri) boğuyordu.
               let f = min(1, max(0, value.location.x / w))
-              if !isScrubbing {
-                isScrubbing = true
-                scrubFraction = f
-              } else {
-                scrubFraction = f
-              }
-              player.seek(to: duration * f)
+              isScrubbing = true
+              scrubFraction = f
             }
             .onEnded { _ in
               guard enabled else { return }
@@ -87,7 +84,7 @@ public struct MPVPlayerMaterialSeekBar: View {
           .foregroundStyle(.secondary)
       }
       .accessibilityElement(children: .combine)
-      .accessibilityLabel("Oynatma konumu")
+      .accessibilityLabel(L("player.a11y.playback_position"))
       .accessibilityValue(
         "\(Self.formatClock(displayPosition(duration: duration))) / \(Self.formatClock(duration))"
       )

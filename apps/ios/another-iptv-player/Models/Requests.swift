@@ -55,14 +55,14 @@ struct LiveStreamsRequest: Queryable, Equatable {
         ValueObservation
             .tracking { db in
                 var sql = """
-                SELECT liveStream.*, category.name AS categoryName
+                SELECT liveStream.*, COALESCE(category.name, ?) AS categoryName
                 FROM liveStream
-                JOIN category ON liveStream.categoryId = category.id 
+                LEFT JOIN category ON liveStream.categoryId = category.id
                              AND liveStream.playlistId = category.playlistId
                              AND category.type = 'live'
                 WHERE liveStream.playlistId = ?
                 """
-                var arguments: [DatabaseValueConvertible] = [playlistId]
+                var arguments: [DatabaseValueConvertible] = [L("content.uncategorized"), playlistId]
                 
                 if let catId = categoryId {
                     sql += " AND liveStream.categoryId = ?"
@@ -103,14 +103,14 @@ struct VODStreamsRequest: Queryable, Equatable {
         ValueObservation
             .tracking { db in
                 var sql = """
-                SELECT vodStream.*, category.name AS categoryName
+                SELECT vodStream.*, COALESCE(category.name, ?) AS categoryName
                 FROM vodStream
-                JOIN category ON vodStream.categoryId = category.id 
+                LEFT JOIN category ON vodStream.categoryId = category.id
                              AND vodStream.playlistId = category.playlistId
                              AND category.type = 'vod'
                 WHERE vodStream.playlistId = ?
                 """
-                var arguments: [DatabaseValueConvertible] = [playlistId]
+                var arguments: [DatabaseValueConvertible] = [L("content.uncategorized"), playlistId]
                 
                 if let catId = categoryId {
                     sql += " AND vodStream.categoryId = ?"
@@ -151,14 +151,14 @@ struct SeriesRequest: Queryable, Equatable {
         ValueObservation
             .tracking { db in
                 var sql = """
-                SELECT series.*, category.name AS categoryName
+                SELECT series.*, COALESCE(category.name, ?) AS categoryName
                 FROM series
-                JOIN category ON series.categoryId = category.id 
+                LEFT JOIN category ON series.categoryId = category.id
                              AND series.playlistId = category.playlistId
                              AND category.type = 'series'
                 WHERE series.playlistId = ?
                 """
-                var arguments: [DatabaseValueConvertible] = [playlistId]
+                var arguments: [DatabaseValueConvertible] = [L("content.uncategorized"), playlistId]
                 
                 if let catId = categoryId {
                     sql += " AND series.categoryId = ?"
@@ -298,17 +298,17 @@ struct FavoriteVODRequest: Queryable, Equatable {
         ValueObservation
             .tracking { db in
                 let sql = """
-                SELECT vodStream.*, category.name AS categoryName
+                SELECT vodStream.*, COALESCE(category.name, ?) AS categoryName
                 FROM favorite
                 JOIN vodStream ON favorite.streamId = vodStream.streamId
                                AND favorite.playlistId = vodStream.playlistId
-                JOIN category ON vodStream.categoryId = category.id
+                LEFT JOIN category ON vodStream.categoryId = category.id
                              AND vodStream.playlistId = category.playlistId
                              AND category.type = 'vod'
                 WHERE favorite.playlistId = ? AND favorite.type = 'vod'
                 ORDER BY favorite.createdAt DESC
                 """
-                return try VODWithCategory.fetchAll(db, sql: sql, arguments: [playlistId])
+                return try VODWithCategory.fetchAll(db, sql: sql, arguments: [L("content.uncategorized"), playlistId])
             }
             .publisher(in: appDatabase.reader)
             .catch { _ in Just([]) }
@@ -325,17 +325,17 @@ struct FavoriteSeriesRequest: Queryable, Equatable {
         ValueObservation
             .tracking { db in
                 let sql = """
-                SELECT series.*, category.name AS categoryName
+                SELECT series.*, COALESCE(category.name, ?) AS categoryName
                 FROM favorite
                 JOIN series ON favorite.streamId = series.seriesId
                            AND favorite.playlistId = series.playlistId
-                JOIN category ON series.categoryId = category.id
+                LEFT JOIN category ON series.categoryId = category.id
                              AND series.playlistId = category.playlistId
                              AND category.type = 'series'
                 WHERE favorite.playlistId = ? AND favorite.type = 'series'
                 ORDER BY favorite.createdAt DESC
                 """
-                return try SeriesWithCategory.fetchAll(db, sql: sql, arguments: [playlistId])
+                return try SeriesWithCategory.fetchAll(db, sql: sql, arguments: [L("content.uncategorized"), playlistId])
             }
             .publisher(in: appDatabase.reader)
             .catch { _ in Just([]) }
@@ -352,17 +352,17 @@ struct FavoriteLiveRequest: Queryable, Equatable {
         ValueObservation
             .tracking { db in
                 let sql = """
-                SELECT liveStream.*, category.name AS categoryName
+                SELECT liveStream.*, COALESCE(category.name, ?) AS categoryName
                 FROM favorite
                 JOIN liveStream ON favorite.streamId = liveStream.streamId
                                AND favorite.playlistId = liveStream.playlistId
-                JOIN category ON liveStream.categoryId = category.id
+                LEFT JOIN category ON liveStream.categoryId = category.id
                              AND liveStream.playlistId = category.playlistId
                              AND category.type = 'live'
                 WHERE favorite.playlistId = ? AND favorite.type = 'live'
                 ORDER BY favorite.createdAt DESC
                 """
-                return try LiveStreamWithCategory.fetchAll(db, sql: sql, arguments: [playlistId])
+                return try LiveStreamWithCategory.fetchAll(db, sql: sql, arguments: [L("content.uncategorized"), playlistId])
             }
             .publisher(in: appDatabase.reader)
             .catch { _ in Just([]) }

@@ -1,10 +1,12 @@
 import Foundation
 
-/// `mpv_render_context_set_update_callback` çok sık tetiklenebilir; her biri için `main.async`
-/// ana kuyruğu tıkar. Bu sınıf aynı anda en fazla bir `main.async` blok planlar.
+/// `mpv_render_context_set_update_callback` mpv'nin iç thread'inde her yeni karede tetiklenir.
+/// Callback'i main queue'ya sıçratmak, kare zamanlamasını main thread doluluğuna (SwiftUI diff,
+/// scroll, overlay açılışı) bağlıyordu — tam da kullanıcı etkileşimindeyken kare düşürüyordu.
+/// `NativeVideoOutput.scheduleWorkerRenderDrain` zaten kilit altında coalescing yapar
+/// (pendingWorkerRender/workerDrainRunning); burada senkron çağırmak yeterli ve güvenlidir —
+/// kilit alma + Worker.enqueue kısa, bloklamayan işlerdir.
 final class UpdateCoalescer {
-  private let lock = NSLock()
-  private var scheduled = false
   private let callback: () -> Void
 
   init(callback: @escaping () -> Void) {
@@ -12,19 +14,6 @@ final class UpdateCoalescer {
   }
 
   func schedule() {
-    lock.lock()
-    if scheduled {
-      lock.unlock()
-      return
-    }
-    scheduled = true
-    lock.unlock()
-    DispatchQueue.main.async { [weak self] in
-      guard let self else { return }
-      self.lock.lock()
-      self.scheduled = false
-      self.lock.unlock()
-      self.callback()
-    }
+    callback()
   }
 }

@@ -81,7 +81,7 @@ struct HistorySeriesPlayerShell: View {
 
         try? await AppDatabase.shared.write { db in
             for (seasonNum, apiSeason) in info.resolvedSeasons {
-                let seasonId = "\(seriesId)_\(seasonNum)"
+                let seasonId = DBSeason.scopedId(playlistId: playlist.id, seriesId: seriesId, seasonNumber: seasonNum)
                 let eps = episodesBySeason[seasonNum] ?? []
 
                 let dbSeason = DBSeason(
@@ -100,7 +100,7 @@ struct HistorySeriesPlayerShell: View {
 
                 for ep in eps {
                     let dbEp = DBEpisode(
-                        id: ep.id ?? UUID().uuidString,
+                        id: DBEpisode.scopedId(playlistId: playlist.id, panelEpisodeId: ep.id),
                         episodeId: ep.id,
                         episodeNum: ep.episodeNum,
                         title: ep.title,
@@ -127,8 +127,15 @@ struct HistorySeriesPlayerShell: View {
 
     private func jumpTo(_ episode: DBEpisode?) {
         guard let ep = episode else { return }
+        let targetSid = ep.episodeId ?? ep.id
+        // Aynı bölüme (hızlı çift tap / bayat buton) atlamayı yut ve komşuları hemen
+        // sıfırla: refreshNeighbors ağ turu bitene dek eski bölümün komşuları
+        // butonlarda/Control Center'da geçerli kalıyordu.
+        guard targetSid != session.streamId else { return }
+        neighborPrev = nil
+        neighborNext = nil
         Task {
-            let sid = ep.episodeId ?? ep.id
+            let sid = targetSid
             // Bölüm indirilmişse local dosyadan oynat; yoksa remote URL kullan.
             let localURL = await DownloadManager.shared.localURL(
                 forId: DownloadManager.idFor(episode: playlist.id, episodeId: sid)

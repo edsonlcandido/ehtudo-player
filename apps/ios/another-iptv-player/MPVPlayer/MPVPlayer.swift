@@ -95,6 +95,8 @@ public final class MPVPlayer: ObservableObject {
   private var onVideoSizeChangeCallback: NativeVideoOutput.SizeCallback?
   /// `time-pos` gözleminde ana iş parçacığına basma sıklığı (saniye).
   private var lastPositionPublishTime: CFTimeInterval = 0
+  /// Tanılama property'leri (avsync, cache-*, bitrate, drop sayaçları) için ayrı throttle.
+  private var lastDiagnosticsPublishTime: CFTimeInterval = 0
   /// `loadfile start=...` ile açılışta ilk time-pos doğrulaması için.
   private var pendingInitialStartSeconds: Double?
   private var didLogInitialStartPosition = false
@@ -179,6 +181,10 @@ public final class MPVPlayer: ObservableObject {
       let handle = mpv_create()
       guard let handle else {
         Log.error("MPVPlayer", "mpv_create failed")
+        // Motor hiç kurulamadı: spinner'da sonsuza dek kalınmasın, UI'a hata düşsün.
+        DispatchQueue.main.async { [weak self] in
+          self?.playbackFailureMessage = L("playback.error.timeout")
+        }
         return
       }
 
@@ -198,6 +204,9 @@ public final class MPVPlayer: ObservableObject {
           "mpv_initialize failed: \(String(cString: mpv_error_string(initSt))) — handle yok ediliyor"
         )
         mpv_terminate_destroy(handle)
+        DispatchQueue.main.async { [weak self] in
+          self?.playbackFailureMessage = L("playback.error.timeout")
+        }
         return
       }
 
@@ -247,6 +256,17 @@ public final class MPVPlayer: ObservableObject {
       helper.videoOutput = self.videoOutput
       self.videoOutput?.refreshDecodedVideoSizeFromMpv()
       self.publishPlaybackState(handle: handle)
+
+      // configure'dan önce gelen load düşmesin: stash'lenen istek handle hazır olunca oynar.
+      if let pending = self.pendingLoadBeforeConfigure {
+        self.pendingLoadBeforeConfigure = nil
+        self.applyLoadOnMpvQueueIfReady(
+          url: pending.url,
+          play: pending.play,
+          startSeconds: pending.startSeconds,
+          liveLowLatency: pending.liveLowLatency
+        )
+      }
     }
   }
 
@@ -287,15 +307,12 @@ public final class MPVPlayer: ObservableObject {
     mpvQueue.async { [weak self] in
       guard let self, !self.isDisposed else { return }
       if self.mpv == nil {
-        // `configure` ile `load` aynı tick’te yarışırsa ilk blok `mpv` görmeden dönebilir; bir kez yeniden dene.
-        self.mpvQueue.async { [weak self] in
-          self?.applyLoadOnMpvQueueIfReady(
-            url: url,
-            play: play,
-            startSeconds: startSeconds,
-            liveLowLatency: liveLowLatency
-          )
-        }
+        // `configure` henüz koşmadıysa isteği stash'le; configure handle'ı kurar kurmaz
+        // oynatır. (Eski "bir kez yeniden dene" yaklaşımı, configure'un kuyruğa daha geç
+        // girdiği durumda load'u sessizce düşürüyordu — sonsuz spinner.)
+        self.pendingLoadBeforeConfigure = PendingConfigureLoad(
+          url: url, play: play, startSeconds: startSeconds, liveLowLatency: liveLowLatency
+        )
         return
       }
       self.applyLoadOnMpvQueueIfReady(
@@ -306,6 +323,16 @@ public final class MPVPlayer: ObservableObject {
       )
     }
   }
+
+  private struct PendingConfigureLoad {
+    let url: URL
+    let play: Bool
+    let startSeconds: TimeInterval?
+    let liveLowLatency: Bool
+  }
+
+  /// configure() öncesi gelen load isteği; yalnız mpvQueue'da erişilir.
+  private var pendingLoadBeforeConfigure: PendingConfigureLoad?
 
   private func applyLoadOnMpvQueueIfReady(
     url: URL,
@@ -410,6 +437,30 @@ public final class MPVPlayer: ObservableObject {
           "MPVPlayer",
           "set speed: \(String(cString: mpv_error_string(st)))"
         )
+      }
+    }
+  }
+
+  /// Askı öncesi seçili video track ("vid" değeri); yalnız mpvQueue'da erişilir.
+  private var suspendedVideoTrackId: String?
+
+  /// Arka planda (PiP aktif değilken) video decode + GLES render zincirini keser; ses sürer.
+  /// `vid=no` decode'u tamamen durdurur — foreground'a dönünce önceki track geri yüklenir.
+  public func setVideoDecodingSuspended(_ suspended: Bool) {
+    mpvQueue.async { [weak self] in
+      guard let self, let handle = self.mpv, !self.isDisposed else { return }
+      if suspended {
+        guard self.suspendedVideoTrackId == nil else { return }
+        let current = MPVHelpers.getStringProperty(handle, name: "vid") ?? "auto"
+        // Zaten kapalıysa "no"yu saklamayalım; restore "auto"ya dönsün.
+        self.suspendedVideoTrackId = current == "no" ? "auto" : current
+        MPVHelpers.setPropertyStringIfSupported(handle, name: "vid", value: "no")
+        Log.info("MPVPlayer", "video decoding suspended (background, PiP inactive)")
+      } else {
+        guard let restore = self.suspendedVideoTrackId else { return }
+        self.suspendedVideoTrackId = nil
+        MPVHelpers.setPropertyStringIfSupported(handle, name: "vid", value: restore)
+        Log.info("MPVPlayer", "video decoding resumed (vid=\(restore))")
       }
     }
   }
@@ -705,11 +756,25 @@ public final class MPVPlayer: ObservableObject {
     if replyUserdata == 1 || replyUserdata == 2 {
       videoOutput?.refreshDecodedVideoSizeFromMpv()
     }
-    if replyUserdata == 3 {
+    switch replyUserdata {
+    case 3:
       publishPositionThrottled(handle: handle)
-    } else {
+    case 13...19:
+      // Sürekli değişen tanılama metrikleri (bitrate, cache-*, avsync, drop sayaçları):
+      // her değişimde ~22 property'lik tam poll + main dispatch yapmak, oynatma boyunca
+      // saniyede onlarca gereksiz tur demekti. 1 sn'de bir yayınlamak debug overlay için
+      // fazlasıyla yeterli; pause/eof/duration gibi durum-kritik property'ler anlık kalır.
+      publishDiagnosticsThrottled(handle: handle)
+    default:
       publishPlaybackState(handle: handle)
     }
+  }
+
+  private func publishDiagnosticsThrottled(handle: OpaquePointer) {
+    let now = CFAbsoluteTimeGetCurrent()
+    if now - lastDiagnosticsPublishTime < 1.0 { return }
+    lastDiagnosticsPublishTime = now
+    publishPlaybackState(handle: handle)
   }
 
   fileprivate func publishPlaybackStateFromMpvQueue() {
@@ -985,12 +1050,14 @@ extension MPVPlayer {
     let langTrim = rawLang?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
     let mainTitle: String
+    var syntheticTitle = false
     if !titleTrim.isEmpty {
       mainTitle = titleTrim
     } else if !langTrim.isEmpty {
       mainTitle = langTrim.uppercased()
     } else {
-      mainTitle = "Parça \(trackId)"
+      mainTitle = L("player.tracks.fallback_title", trackId)
+      syntheticTitle = true
     }
 
     var parts: [String] = []
@@ -1002,11 +1069,11 @@ extension MPVPlayer {
       parts.append(String(format: "%.2f fps", demuxFps))
     }
     if typeStr == "audio", channels > 0 {
-      parts.append("\(channels) kanal")
+      parts.append(L("player.tracks.channels", Int(channels)))
     }
-    if isImage { parts.append("Kapak / resim") }
-    if isDefault { parts.append("Varsayılan") }
-    if isForced { parts.append("Zorunlu") }
+    if isImage { parts.append(L("player.tracks.cover_image")) }
+    if isDefault { parts.append(L("player.tracks.default")) }
+    if isForced { parts.append(L("player.tracks.forced")) }
     if !langTrim.isEmpty, titleTrim.isEmpty || titleTrim.lowercased() != langTrim.lowercased() {
       parts.append(langTrim.uppercased())
     }
@@ -1014,7 +1081,8 @@ extension MPVPlayer {
     let detail = parts.isEmpty ? nil : parts.joined(separator: " · ")
     let langCode = langTrim.isEmpty ? nil : langTrim
     return TrackMenuOption(
-      id: trackId, title: mainTitle, detail: detail, langCode: langCode, isExternal: isExternal
+      id: trackId, title: mainTitle, detail: detail, langCode: langCode,
+      isExternal: isExternal, isSyntheticTitle: syntheticTitle
     )
   }
 
@@ -1089,9 +1157,11 @@ extension MPVPlayer {
       var scaleOne = 1.0
       _ = mpv_set_property(handle, "sub-scale", MPV_FORMAT_DOUBLE, &scaleOne)
 
-      // libmpv `sub-line-spacing` satır aralığını piksel olarak alır; yüzdeyi yaklaşık piksele çevir.
-      var lineSpace = Double(settings.fontSize) * max(0, settings.lineHeight - 1.0)
-      _ = mpv_set_property(handle, "sub-line-spacing", MPV_FORMAT_DOUBLE, &lineSpace)
+      // Satır aralığı piksel olarak: paketli mpv 0.36'da property adı "sub-ass-line-spacing"
+      // ("sub-line-spacing" yok — eski ad sessizce PROPERTY_NOT_FOUND dönüyordu ve slider
+      // hiçbir şey yapmıyordu). sub-ass-override=force ile düz metin altyazılara da uygulanır.
+      let lineSpace = Double(settings.fontSize) * max(0, settings.lineHeight - 1.0)
+      MPVHelpers.setPropertyStringIfSupported(handle, name: "sub-ass-line-spacing", value: String(lineSpace))
 
       var spacing = settings.letterSpacing
       _ = mpv_set_property(handle, "sub-spacing", MPV_FORMAT_DOUBLE, &spacing)
@@ -1105,7 +1175,10 @@ extension MPVPlayer {
       // Kenar boşluğu: libass alt/sol kenardan uzaklık. "İç boşluk" isteğini kenar boşluğuna eşliyoruz.
       var marginX = Double(settings.padding)
       _ = mpv_set_property(handle, "sub-margin-x", MPV_FORMAT_DOUBLE, &marginX)
-      var marginY = Double(settings.padding + max(0, -settings.verticalOffset))
+      // Dikey ofset: negatif = yukarı (marj artar), pozitif = aşağı (marj 0'a doğru
+      // azalır). Eski `max(0, -offset)` eşlemesi pozitif tarafı tamamen yok sayıyordu —
+      // slider'ın yarısı önizlemede çalışıp videoda etkisiz kalıyordu.
+      var marginY = max(0, Double(settings.padding) - Double(settings.verticalOffset))
       _ = mpv_set_property(handle, "sub-margin-y", MPV_FORMAT_DOUBLE, &marginY)
 
       // Metin rengi.

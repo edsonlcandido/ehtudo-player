@@ -13,13 +13,17 @@ struct TrackMenuOption: Identifiable, Hashable {
   let langCode: String?
   /// mpv `track-list/N/external`: external file track added via `sub-add`.
   let isExternal: Bool
+  /// Başlık gerçek metadata değil, index'ten türetilmiş ("Parça 2" gibi). Tercih olarak
+  /// SAKLANMAMALI — bir sonraki videoda pozisyonu aynı olan alakasız parçayı seçtirir.
+  let isSyntheticTitle: Bool
 
-  init(id: Int, title: String, detail: String? = nil, langCode: String? = nil, isExternal: Bool = false) {
+  init(id: Int, title: String, detail: String? = nil, langCode: String? = nil, isExternal: Bool = false, isSyntheticTitle: Bool = false) {
     self.id = id
     self.title = title
     self.detail = detail
     self.langCode = langCode
     self.isExternal = isExternal
+    self.isSyntheticTitle = isSyntheticTitle
   }
 }
 
@@ -145,6 +149,9 @@ final class VideoPlayerController: ObservableObject {
   private var pendingLoadRequest: PendingLoadRequest?
   private var isTornDown = false
   private var audioSessionActivated = false
+  /// System brightness before the app's first in-player adjustment; restored on teardown
+  /// so leaving the player never strands the whole device at the in-video level.
+  private var brightnessToRestore: CGFloat?
   private var playbackPresentation: PlaybackPresentation?
   private var remoteCommandTargets: [(MPRemoteCommand, Any)] = []
   private var seriesEpisodeOnPrevious: (() -> Void)?
@@ -235,9 +242,60 @@ final class VideoPlayerController: ObservableObject {
     NotificationCenter.default.publisher(for: UIScreen.brightnessDidChangeNotification)
       .receive(on: DispatchQueue.main)
       .sink { [weak self] _ in
-        self?.screenBrightness = UIScreen.main.brightness
+        guard let self else { return }
+        // Dosyanın zorunlu kıldığı `if current != new` koruması: @Published aynı
+        // değerde bile objectWillChange yakar, sürükleme boyunca PlayerView'ı boşa
+        // invalidate ediyordu.
+        let b = UIScreen.main.brightness
+        if self.screenBrightness != b { self.screenBrightness = b }
       }
       .store(in: &cancellables)
+
+    // Phone call / Siri / alarm: iOS deactivates our session and mpv's audio output
+    // stops. Without this observer the player stays silent until fully reopened.
+    NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] note in
+        self?.handleAudioSessionInterruption(note)
+      }
+      .store(in: &cancellables)
+
+    // Kulaklık çıkarma / Bluetooth kopması: platform geleneği (AVPlayer davranışı)
+    // oynatmayı duraklatmaktır — aksi halde ses aniden hoparlörden devam eder.
+    NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] note in
+        guard let self,
+              let reasonRaw = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              AVAudioSession.RouteChangeReason(rawValue: reasonRaw) == .oldDeviceUnavailable,
+              self.isPlaying
+        else { return }
+        self.mpvEngine.pause()
+      }
+      .store(in: &cancellables)
+  }
+
+  private func handleAudioSessionInterruption(_ note: Notification) {
+    guard let info = note.userInfo,
+          let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+          let type = AVAudioSession.InterruptionType(rawValue: typeValue)
+    else { return }
+    switch type {
+    case .began:
+      // The session is already deactivated by the system; clear the flag so the
+      // next setupAudioSession() call is not short-circuited.
+      audioSessionActivated = false
+      if isPlaying { mpvEngine.pause() }
+    case .ended:
+      let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+      let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+      setupAudioSession()
+      if options.contains(.shouldResume), !isTornDown {
+        mpvEngine.play()
+      }
+    @unknown default:
+      break
+    }
   }
 
   /// Her @Published atama `objectWillChange` fire eder — Swift @Published eşitlik kontrolü yapmaz.
@@ -415,8 +473,12 @@ final class VideoPlayerController: ObservableObject {
   func setScreenBrightness(_ value: CGFloat) {
     let clamped = min(max(value, 0), 1)
     let apply = { [weak self] in
+      guard let self else { return }
+      if self.brightnessToRestore == nil {
+        self.brightnessToRestore = UIScreen.main.brightness
+      }
       UIScreen.main.brightness = clamped
-      self?.screenBrightness = clamped
+      if self.screenBrightness != clamped { self.screenBrightness = clamped }
     }
     if Thread.isMainThread {
       apply()
@@ -568,12 +630,18 @@ final class VideoPlayerController: ObservableObject {
     seriesEpisodeOnNext = nil
     MPRemoteCommandCenter.shared().previousTrackCommand.isEnabled = false
     MPRemoteCommandCenter.shared().nextTrackCommand.isEnabled = false
-    if Thread.isMainThread {
+    let restoreBrightness = brightnessToRestore
+    brightnessToRestore = nil
+    let restoreSystemState = {
       UIApplication.shared.isIdleTimerDisabled = false
-    } else {
-      DispatchQueue.main.async {
-        UIApplication.shared.isIdleTimerDisabled = false
+      if let restoreBrightness {
+        UIScreen.main.brightness = restoreBrightness
       }
+    }
+    if Thread.isMainThread {
+      restoreSystemState()
+    } else {
+      DispatchQueue.main.async(execute: restoreSystemState)
     }
     cancellables.removeAll()
     removeRemoteCommands()
@@ -581,7 +649,16 @@ final class VideoPlayerController: ObservableObject {
     playbackPresentation = nil
     cancelNowPlayingArtworkFetch(clearImage: true)
     pendingLoadRequest = nil
+    let wasActivated = audioSessionActivated
     audioSessionActivated = false
+    if wasActivated {
+      // Non-mixable .playback oturumu açık bırakılırsa, oynatıcı kapandıktan sonra
+      // kestiğimiz uygulama (Music/Spotify) hiçbir zaman devam sinyali alamaz.
+      // mpv'nin audio unit'i async dispose olduğundan kısa bir gecikmeyle kapat.
+      DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.5) {
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+      }
+    }
     seekRequestStartedAt = nil
     seekSourceTimeMs = nil
     seekLatencyMs = -1

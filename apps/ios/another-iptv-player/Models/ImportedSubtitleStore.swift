@@ -57,6 +57,29 @@ enum ImportedSubtitleStore {
         UserDefaults.standard.set(map, forKey: selectionKey)
     }
 
+    /// Playlist silinince: o playlist'e ait tüm altyazı klasörlerini ve seçim
+    /// kayıtlarını temizler. contentKey her zaman "<playlistUUID>_..." ile başlar.
+    static func removeAll(playlistId: UUID) {
+        let prefix = sanitize(playlistId.uuidString) + "_"
+        let fm = FileManager.default
+        if let appSupport = try? fm.url(
+            for: .applicationSupportDirectory, in: .userDomainMask,
+            appropriateFor: nil, create: false
+        ) {
+            let root = appSupport.appendingPathComponent("ImportedSubtitles", isDirectory: true)
+            if let entries = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) {
+                for entry in entries where entry.lastPathComponent.hasPrefix(prefix) {
+                    try? fm.removeItem(at: entry)
+                }
+            }
+        }
+        var map = (UserDefaults.standard.dictionary(forKey: selectionKey) as? [String: String]) ?? [:]
+        let orphanKeys = map.keys.filter { $0.hasPrefix(prefix) }
+        guard !orphanKeys.isEmpty else { return }
+        for key in orphanKeys { map.removeValue(forKey: key) }
+        UserDefaults.standard.set(map, forKey: selectionKey)
+    }
+
     private static func directory(for contentKey: String, create: Bool) throws -> URL {
         let fm = FileManager.default
         let appSupport = try fm.url(

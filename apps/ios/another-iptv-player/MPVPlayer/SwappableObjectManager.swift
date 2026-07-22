@@ -5,6 +5,11 @@ public final class SwappableObjectManager<T> {
   private var available: [T]
   private var ready: [T] = []
   private var _current: T?
+  /// `current`'tan yeni inen nesne: dış tüketici (AVSampleBufferDisplayLayer, IOSurface'ı
+  /// doğrudan tarar) bir kare daha gösteriyor olabilir. Hemen `available`'a dönerse mpv
+  /// ekranda duran buffer'ın üzerine çizer (yırtılma/flicker). Bir sonraki demotion'a
+  /// kadar bekletilir.
+  private var cooling: T?
 
   init(objects: [T], skipCheckArgs: Bool = false) {
     if !skipCheckArgs {
@@ -22,6 +27,7 @@ public final class SwappableObjectManager<T> {
     available = objects
     ready = []
     _current = nil
+    cooling = nil
   }
 
   public func nextAvailable() -> T? {
@@ -54,7 +60,8 @@ public final class SwappableObjectManager<T> {
     _current = next
 
     if old == nil { return }
-    available.append(old!)
+    if let cooled = cooling { available.append(cooled) }
+    cooling = old
   }
 
   private static func checkArgs(_ objects: [T]) {
@@ -69,6 +76,7 @@ public final class SwappableObjectManager<T> {
     available.removeAll(keepingCapacity: false)
     ready.removeAll(keepingCapacity: false)
     _current = nil
+    cooling = nil
     lock.unlock()
   }
 }

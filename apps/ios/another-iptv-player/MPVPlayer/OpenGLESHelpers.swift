@@ -1,15 +1,21 @@
 import OpenGLES
 import UIKit
 
+// Boyutlar stream'den gelir (video-params) ve bellek baskısı altında bu ayırmalar
+// gerçekten başarısız olabilir; assert release'te derlenmediği için force-unwrap
+// üretimde crash demekti. Hepsi optional döner, çağıranlar düşer/atlar.
 public enum OpenGLESHelpers {
-  public static func createContext() -> EAGLContext {
+  public static func createContext() -> EAGLContext? {
     let context = EAGLContext(api: .openGLES3)
-    return context!
+    if context == nil {
+      Log.error("OpenGLESHelpers", "EAGLContext(api: .openGLES3) failed")
+    }
+    return context
   }
 
   public static func createTextureCache(
     _ context: EAGLContext
-  ) -> CVOpenGLESTextureCache {
+  ) -> CVOpenGLESTextureCache? {
     var textureCache: CVOpenGLESTextureCache?
     let cvret: CVReturn = CVOpenGLESTextureCacheCreate(
       kCFAllocatorDefault,
@@ -18,11 +24,14 @@ public enum OpenGLESHelpers {
       nil,
       &textureCache
     )
-    assert(cvret == kCVReturnSuccess, "CVOpenGLESTextureCacheCreate")
-    return textureCache!
+    if cvret != kCVReturnSuccess {
+      Log.error("OpenGLESHelpers", "CVOpenGLESTextureCacheCreate failed: \(cvret)")
+      return nil
+    }
+    return textureCache
   }
 
-  public static func createPixelBuffer(_ size: CGSize) -> CVPixelBuffer {
+  public static func createPixelBuffer(_ size: CGSize) -> CVPixelBuffer? {
     var pixelBuffer: CVPixelBuffer?
     let attrs =
       [
@@ -37,15 +46,18 @@ public enum OpenGLESHelpers {
       attrs,
       &pixelBuffer
     )
-    assert(cvret == kCVReturnSuccess, "CVPixelBufferCreate")
-    return pixelBuffer!
+    if cvret != kCVReturnSuccess {
+      Log.error("OpenGLESHelpers", "CVPixelBufferCreate failed: \(cvret) (\(Int(size.width))x\(Int(size.height)))")
+      return nil
+    }
+    return pixelBuffer
   }
 
   public static func createTexture(
     _ textureCache: CVOpenGLESTextureCache,
     _ pixelBuffer: CVPixelBuffer,
     _ size: CGSize
-  ) -> CVOpenGLESTexture {
+  ) -> CVOpenGLESTexture? {
     var texture: CVOpenGLESTexture?
     let cvret: CVReturn = CVOpenGLESTextureCacheCreateTextureFromImage(
       kCFAllocatorDefault,
@@ -61,11 +73,11 @@ public enum OpenGLESHelpers {
       0,
       &texture
     )
-    assert(
-      cvret == kCVReturnSuccess,
-      "CVOpenGLESTextureCacheCreateTextureFromImage"
-    )
-    return texture!
+    if cvret != kCVReturnSuccess {
+      Log.error("OpenGLESHelpers", "CVOpenGLESTextureCacheCreateTextureFromImage failed: \(cvret)")
+      return nil
+    }
+    return texture
   }
 
   public enum FrameBufferError: Error {

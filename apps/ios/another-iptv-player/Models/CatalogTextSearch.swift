@@ -2,18 +2,24 @@ import Foundation
 
 /// GRDB `localized_*` SQL fonksiyonlarıyla aynı mantık (Persistence.swift).
 enum CatalogTextSearch {
-    private static let locale = Locale(identifier: "tr_TR")
+    private static let foldLocale = Locale(identifier: "en_US_POSIX")
     private static let alphanumericSet = CharacterSet.alphanumerics
 
+    /// Locale-invariant fold: tr_TR lowercasing maps "I"→"ı" and breaks queries like
+    /// "history" against ALL-CAPS catalog names ("HISTORY HD" → "hıstory hd").
+    /// The extra "ı"→"i" pass keeps Turkish dotless-ı queries matching ALL-CAPS
+    /// Turkish text ("IŞIK" and "ışık" both normalize to "isik").
     private static func normalize(_ s: String) -> String {
-        let lowercase = s.lowercased(with: locale)
-        let folded = lowercase.folding(options: .diacriticInsensitive, locale: locale)
-        return folded.components(separatedBy: alphanumericSet.inverted).joined()
+        let folded = s.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: foldLocale)
+        return folded
+            .replacingOccurrences(of: "ı", with: "i")
+            .components(separatedBy: alphanumericSet.inverted)
+            .joined()
     }
 
     static func matches(search: String, text: String) -> Bool {
         let normalizedText = normalize(text)
-        let queryWords = search.lowercased(with: locale)
+        let queryWords = search
             .components(separatedBy: .whitespaces)
             .filter { !$0.isEmpty }
         if queryWords.isEmpty { return true }

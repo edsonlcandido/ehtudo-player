@@ -17,27 +17,20 @@ enum XtreamImporter {
         print("--- XTREAM IMPORT: SYNC STARTED (SQLITE) ---")
         let totalStartTime = Date()
 
-        let catStart = Date()
+        // Altı endpoint bağımsız — sıralı beklemek toplam süreyi altı gidiş-dönüşün
+        // TOPLAMI yapıyordu; paralel çekim yavaş panellerde süreyi yarıdan fazla kısaltır.
+        let fetchStart = Date()
         await progress(L("add_playlist.fetching_categories"))
-        let liveCats = try await client.getLiveCategories()
-        let vodCats = try await client.getVODCategories()
-        let seriesCats = try await client.getSeriesCategories()
-        print("NETWORK: Categories fetched in \(Date().timeIntervalSince(catStart)) seconds")
-
-        let liveStart = Date()
-        await progress(L("add_playlist.fetching_live"))
-        let liveStreams = try await client.getLiveStreams()
-        print("NETWORK: Live Streams fetched in \(Date().timeIntervalSince(liveStart)) seconds | Count: \(liveStreams.count)")
-
-        let vodStart = Date()
-        await progress(L("add_playlist.fetching_movies"))
-        let vods = try await client.getVODStreams()
-        print("NETWORK: VODs fetched in \(Date().timeIntervalSince(vodStart)) seconds | Count: \(vods.count)")
-
-        let seriesStart = Date()
-        await progress(L("add_playlist.fetching_series"))
-        let series = try await client.getSeries()
-        print("NETWORK: Series fetched in \(Date().timeIntervalSince(seriesStart)) seconds | Count: \(series.count)")
+        async let liveCatsTask = client.getLiveCategories()
+        async let vodCatsTask = client.getVODCategories()
+        async let seriesCatsTask = client.getSeriesCategories()
+        async let liveStreamsTask = client.getLiveStreams()
+        async let vodsTask = client.getVODStreams()
+        async let seriesTask = client.getSeries()
+        let (liveCats, vodCats, seriesCats, liveStreams, vods, series) = try await (
+            liveCatsTask, vodCatsTask, seriesCatsTask, liveStreamsTask, vodsTask, seriesTask
+        )
+        print("NETWORK: All 6 endpoints fetched in \(Date().timeIntervalSince(fetchStart)) seconds | live=\(liveStreams.count) vod=\(vods.count) series=\(series.count)")
 
         // 1. Save the playlist first so it shows up in the list even if content insertion fails.
         try await AppDatabase.shared.write { db in

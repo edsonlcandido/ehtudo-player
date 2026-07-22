@@ -45,6 +45,10 @@ struct VODView: View {
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let loadError = contentStore.loadError, debouncedQuery.isEmpty {
+                    CatalogLoadErrorView(message: loadError) {
+                        Task { await contentStore.loadPlaylist(playlist) }
+                    }
                 } else {
                     VStack(spacing: 12) {
                         Image(systemName: "film")
@@ -87,6 +91,11 @@ struct VODView: View {
                                 .id(category.id)
                             }
                         }
+                    }
+                    .refreshable {
+                        // Bağımsız Task: refreshable iptali isteklere yayılmasın (bkz. LiveStreamsView).
+                        let work = Task { await contentStore.refreshFromNetwork(playlist: playlist) }
+                        await work.value
                     }
                     .onChange(of: pendingScrollTarget) { _, target in
                         guard let target else { return }
@@ -420,11 +429,15 @@ struct VODCategoryShelfRow: View, Equatable {
                         .padding(.horizontal, 16)
                 }
             } else {
+                // Kuyruğu raf başına BİR kez kur: NavigationLink destination'ı hücre
+                // render'ında değerlendirilir; items.map'i içeride bırakmak her yeni
+                // hücrede tüm kategoriyi kopyalıyordu (O(N²) scroll maliyeti).
+                let queue = items.map(\.stream)
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: 14) {
                         ForEach(items) { item in
                             NavigationLink {
-                                MovieDetailView(playlist: playlist, movie: item.stream, queue: items.map(\.stream))
+                                MovieDetailView(playlist: playlist, movie: item.stream, queue: queue)
                             } label: {
                                 VODStreamCard(
                                     playlistId: playlist.id,
@@ -452,42 +465,25 @@ struct VODCategoryShelfRow: View, Equatable {
         let urls = list.prefix(VODCategoryShelf.prefetchHeadCount)
             .compactMap { $0.stream.streamIcon }
             .compactMap { URL(string: $0) }
-        ListImagePrefetch.start(urls: urls, posterMetrics: posterMetrics, isShelf: true)
+        ListImagePrefetch.start(
+            urls: urls,
+            width: posterMetrics.shelfPosterWidth,
+            height: posterMetrics.shelfPosterHeight,
+            contentMode: .fill,
+            loadProfile: .shelf
+        )
     }
 }
 
 struct VODStreamCard: View {
+    let playlistId: UUID
     let stream: DBVODStream
     var categoryName: String? = nil
     var posterWidth: CGFloat = 160
     var posterHeight: CGFloat = 240
     var imageLoadProfile: ImageLoadProfile = .standard
-
-    @Query<WatchHistoryRequest> private var watchHistory: DBWatchHistory?
-
-    init(
-        playlistId: UUID,
-        stream: DBVODStream,
-        categoryName: String? = nil,
-        posterWidth: CGFloat = 160,
-        posterHeight: CGFloat = 240,
-        imageLoadProfile: ImageLoadProfile = .standard
-    ) {
-        self.stream = stream
-        self.categoryName = categoryName
-        self.posterWidth = posterWidth
-        self.posterHeight = posterHeight
-        self.imageLoadProfile = imageLoadProfile
-        _watchHistory = Query(
-            WatchHistoryRequest(streamId: String(stream.streamId), playlistId: playlistId, type: "vod"),
-            in: \.appDatabase
-        )
-    }
-
-    private var watchProgress: Double? {
-        guard let h = watchHistory, h.durationMs > 0 else { return nil }
-        return Double(h.lastTimeMs) / Double(h.durationMs)
-    }
+    /// Kart başına @Query açmak yerine üst view'dan geçilir (nil = progress bar gizli)
+    var watchProgress: Double? = nil
 
     var body: some View {
         VStack {
@@ -585,10 +581,12 @@ struct VODCategoryContent: View {
     let items: [VODWithCategory]
 
     @Environment(\.posterMetrics) private var posterMetrics
+    @Query<WatchProgressMapRequest> private var progressMap: [String: Double]
 
     init(playlist: Playlist, items: [VODWithCategory]) {
         self.playlist = playlist
         self.items = items
+        _progressMap = Query(WatchProgressMapRequest(playlistId: playlist.id, type: "vod"), in: \.appDatabase)
     }
 
     private var categoryGridColumns: [GridItem] {
@@ -608,18 +606,21 @@ struct VODCategoryContent: View {
                     Spacer()
                 }
             } else {
+                // Bkz. VODCategoryShelfRow: kuyruk body başına bir kez kurulur.
+                let queue = items.map(\.stream)
                 ScrollView {
                     LazyVGrid(columns: categoryGridColumns, spacing: posterMetrics.gridRowSpacing) {
                         ForEach(items) { item in
                             NavigationLink {
-                                MovieDetailView(playlist: playlist, movie: item.stream, queue: items.map(\.stream))
+                                MovieDetailView(playlist: playlist, movie: item.stream, queue: queue)
                             } label: {
                                 VODStreamCard(
                                     playlistId: playlist.id,
                                     stream: item.stream,
                                     posterWidth: posterMetrics.categoryGridPosterWidth,
                                     posterHeight: posterMetrics.categoryGridPosterHeight,
-                                    imageLoadProfile: .grid
+                                    imageLoadProfile: .grid,
+                                    watchProgress: progressMap[String(item.stream.streamId)]
                                 )
                             }
                             .buttonStyle(.plain)
@@ -629,11 +630,11 @@ struct VODCategoryContent: View {
                 }
                 .onChange(of: items) { _, newValue in
                     let urls = newValue.compactMap { $0.stream.streamIcon }.compactMap { URL(string: $0) }
-                    ListImagePrefetch.start(urls: urls, posterMetrics: posterMetrics)
+                    ListImagePrefetch.start(urls: urls, width: posterMetrics.categoryGridPosterWidth, height: posterMetrics.categoryGridPosterHeight, contentMode: .fill, loadProfile: .grid)
                 }
                 .onAppear {
                     let urls = items.compactMap { $0.stream.streamIcon }.compactMap { URL(string: $0) }
-                    ListImagePrefetch.start(urls: urls, posterMetrics: posterMetrics)
+                    ListImagePrefetch.start(urls: urls, width: posterMetrics.categoryGridPosterWidth, height: posterMetrics.categoryGridPosterHeight, contentMode: .fill, loadProfile: .grid)
                 }
             }
         }

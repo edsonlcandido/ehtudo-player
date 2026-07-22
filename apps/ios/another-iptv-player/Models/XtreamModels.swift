@@ -114,7 +114,10 @@ struct XtreamCategory: Codable, Identifiable {
     let categoryName: String?
     let parentId: Int?
     
-    var id: String { categoryId ?? UUID().uuidString }
+    // Deterministik fallback: her erişimde yeni UUID üretmek hem SwiftUI diff'ini
+    // bozuyor hem de her yeniden senkronda DB'ye yeni mükerrer kategori satırı
+    // ekletiyordu (id upsert anahtarı).
+    var id: String { categoryId ?? "noid-\(categoryName ?? "")" }
     
     enum CodingKeys: String, CodingKey {
         case categoryId = "category_id"

@@ -357,7 +357,7 @@ struct M3UPlaylistSettingsView: View {
             syncMessage = nil
         }
         do {
-            let content = try M3UService().readLocal(url: url)
+            let content = try await M3UService().readLocalAsync(url: url)
             syncMessage = L("settings.m3u.parsing")
             let parsed = try await M3UParser.parseAsync(content)
             syncMessage = L("settings.m3u.saving")

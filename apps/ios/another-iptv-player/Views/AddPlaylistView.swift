@@ -115,8 +115,10 @@ struct AddPlaylistView: View {
                 Text(errorMessage ?? L("common.unknown_error"))
             })
         }
+        // Doğrulama/senkron sürerken sheet kaydırılarak kapatılamasın (bkz. AddM3UPlaylistView).
+        .interactiveDismissDisabled(isLoading)
     }
-    
+
     private func savePlaylist() async {
         isLoading = true
         errorMessage = nil

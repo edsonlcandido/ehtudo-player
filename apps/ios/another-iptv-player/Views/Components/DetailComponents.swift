@@ -392,7 +392,7 @@ struct DetailPlotBlock: View {
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
                 } label: {
-                    Text(expanded ? "Daha az" : "Daha fazla")
+                    Text(expanded ? L("detail.show_less") : L("detail.show_more"))
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(Color.accentColor)
                 }

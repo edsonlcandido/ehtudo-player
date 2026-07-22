@@ -18,13 +18,38 @@ enum XtreamError: LocalizedError {
     }
 }
 
+/// IPTV panel/playlist istekleri için sınırlı zaman aşımlı oturum. `URLSession.shared`
+/// 60 sn idle + 7 GÜN resource zaman aşımıyla geliyor — yanıt vermeyen bir panel,
+/// ekleme/yenileme akışını dakikalarca iptal edilemez şekilde asılı bırakıyordu.
+enum PanelURLSession {
+    static let shared: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 20
+        config.timeoutIntervalForResource = 300
+        return URLSession(configuration: config)
+    }()
+}
+
 class XtreamAPIClient {
     private let playlist: Playlist
     private let urlSession: URLSession
-    
-    init(playlist: Playlist, urlSession: URLSession = .shared) {
+
+    init(playlist: Playlist, urlSession: URLSession = PanelURLSession.shared) {
         self.playlist = playlist
         self.urlSession = urlSession
+    }
+
+    /// Log ve hata metinlerine gidecek URL'lerde kimlik bilgisini maskeler — panel URL'leri
+    /// username/password taşır ve bunlar alert ekran görüntüleriyle/loglarla sızabilir.
+    private static func redacted(_ urlString: String) -> String {
+        guard var comps = URLComponents(string: urlString) else { return "<invalid-url>" }
+        comps.queryItems = comps.queryItems?.map { item in
+            if item.name == "username" || item.name == "password" {
+                return URLQueryItem(name: item.name, value: "***")
+            }
+            return item
+        }
+        return comps.string ?? "<invalid-url>"
     }
     
     // Auto-formatting the base URL
@@ -67,41 +92,52 @@ class XtreamAPIClient {
             comps.queryItems?.append(contentsOf: queryItems)
         }
         
+        // '+' RFC 3986'da query'de geçerli olduğundan URLComponents kodlamaz, ama PHP
+        // tabanlı Xtream panelleri $_GET'te '+'yı boşluğa çevirir — 'ab+12' şifresi
+        // 'ab 12' olarak ulaşır ve giriş sessizce reddedilirdi.
+        comps.percentEncodedQuery = comps.percentEncodedQuery?
+            .replacingOccurrences(of: "+", with: "%2B")
+
         guard let url = comps.url else {
-            throw XtreamError.invalidURL(comps.string ?? "Bilinmeyen URL")
+            // Kullanıcıya gösterilen hata metnine ham (kimlik bilgili) URL koyma.
+            throw XtreamError.invalidURL(Self.redacted(comps.string ?? ""))
         }
 
-        
+
         do {
             let (data, response) = try await urlSession.data(from: url)
-            
+
+            #if DEBUG
             // Debug: Log series info for structure comparison
             if url.absoluteString.contains("action=get_series_info") {
                 if let jsonString = String(data: data, encoding: .utf8) {
                     print("--- [DEBUG] SERIES INFO RAW RESPONSE START ---")
-                    print("URL: \(url.absoluteString)")
+                    print("URL: \(Self.redacted(url.absoluteString))")
                     print("JSON: \(jsonString)")
                     print("--- [DEBUG] SERIES INFO RAW RESPONSE END ---")
                 }
             }
-            
+            #endif
+
             // Check HTTP status code
             if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
                  throw XtreamError.serverError("HTTP \(httpResponse.statusCode)")
             }
-            
+
             // Catch JSON decoding errors safely
             do {
                 let decoder = JSONDecoder()
                 return try decoder.decode(T.self, from: data)
             } catch(let error) {
+                #if DEBUG
                 print("--- DECODING ERROR ---")
-                print("URL: \(url)")
+                print("URL: \(Self.redacted(url.absoluteString))")
                 if let jsonString = String(data: data, encoding: .utf8) {
                     print("RAW DATA: \(jsonString)")
                 }
                 print("ERROR: \(error)")
                 print("--- END ERROR ---")
+                #endif
                 throw XtreamError.decodingError(error)
             }
         } catch let error as XtreamError {
