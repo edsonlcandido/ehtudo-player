@@ -267,8 +267,6 @@
 
     <!-- Dashboard / category / picker -->
     <string name="dashboard_categories_cd">Categorias</string>
-    <string name="dashboard_favorites_cd">Favoritos</string>
-    <string name="dashboard_refresh_cd">Atualizar</string>
     <string name="dashboard_retry">Tentar novamente</string>
     <string name="category_label_fallback">Categoria</string>
     <string name="category_search_movies">Buscar filme</string>

@@ -69,6 +69,7 @@ fun LiveCategoryDetailScreen(
     ) { innerPadding ->
         LiveChannelList(
             items = allItems,
+            playlistId = playlistId,
             modifier = Modifier.fillMaxSize().padding(innerPadding),
             emptyIcon = Icons.Default.LiveTv,
             emptyMessage = stringResource(R.string.empty_category_no_live),

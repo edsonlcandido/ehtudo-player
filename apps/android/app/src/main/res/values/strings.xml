@@ -260,8 +260,6 @@
 
     <!-- Dashboard / category / picker -->
     <string name="dashboard_categories_cd">Categories</string>
-    <string name="dashboard_favorites_cd">Favorites</string>
-    <string name="dashboard_refresh_cd">Refresh</string>
     <string name="dashboard_retry">Retry</string>
     <string name="category_label_fallback">Category</string>
     <string name="category_search_movies">Search movie</string>

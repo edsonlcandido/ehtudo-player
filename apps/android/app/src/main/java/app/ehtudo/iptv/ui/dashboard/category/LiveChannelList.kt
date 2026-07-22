@@ -18,26 +18,38 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LiveTv
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import app.ehtudo.iptv.R
+import app.ehtudo.iptv.data.FavoriteRepository
 import app.ehtudo.iptv.data.local.LiveStreamWithCategory
+import app.ehtudo.iptv.ui.LocalFavoriteRepository
+import kotlinx.coroutines.launch
 
 /**
- * Two-line channel row — square logo on the left, name + category on the
- * right. Mirrors the iOS `LiveChannelListRow` in `LiveCategoryDetailView`,
- * which switched from the icon-grid to a denser list so users can read
- * long Portuguese-language channel names without truncation.
+ * Two-line channel row — square logo on the left, name + category in the
+ * middle, favorite star on the right. Mirrors the iOS
+ * `LiveChannelListRow` in `LiveCategoryDetailView`, which switched from
+ * the icon-grid to a denser list so users can read long
+ * Portuguese-language channel names without truncation.
  *
  * Only used by [LiveCategoryDetailScreen] — VOD and Series keep the poster
  * grid because title length and cover art are central to discovery.
@@ -45,9 +57,10 @@ import app.ehtudo.iptv.data.local.LiveStreamWithCategory
 @Composable
 fun LiveChannelList(
     items: List<LiveStreamWithCategory>,
+    playlistId: String,
     modifier: Modifier = Modifier,
     emptyIcon: ImageVector = Icons.Default.LiveTv,
-    emptyMessage: String = androidx.compose.ui.res.stringResource(R.string.empty_category_no_live),
+    emptyMessage: String = stringResource(R.string.empty_category_no_live),
     onClick: (LiveStreamWithCategory) -> Unit,
 ) {
     if (items.isEmpty()) {
@@ -60,13 +73,27 @@ fun LiveChannelList(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         items(items, key = { it.id }) { row ->
-            LiveChannelListRow(row = row, onClick = { onClick(row) })
+            LiveChannelListRow(
+                row = row,
+                playlistId = playlistId,
+                onClick = { onClick(row) },
+            )
         }
     }
 }
 
 @Composable
-private fun LiveChannelListRow(row: LiveStreamWithCategory, onClick: () -> Unit) {
+private fun LiveChannelListRow(
+    row: LiveStreamWithCategory,
+    playlistId: String,
+    onClick: () -> Unit,
+) {
+    val favoriteRepository = LocalFavoriteRepository.current
+    val scope = rememberCoroutineScope()
+    val isFavorite by favoriteRepository
+        .observeIsFavorite(row.stream.streamId, playlistId, FavoriteRepository.Type.LIVE)
+        .collectAsStateWithLifecycle(initialValue = false)
+
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
@@ -121,6 +148,26 @@ private fun LiveChannelListRow(row: LiveStreamWithCategory, onClick: () -> Unit)
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+            }
+            IconButton(
+                onClick = {
+                    scope.launch {
+                        favoriteRepository.setFavorite(
+                            streamId = row.stream.streamId,
+                            playlistId = playlistId,
+                            type = FavoriteRepository.Type.LIVE,
+                            favorite = !isFavorite,
+                        )
+                    }
+                },
+            ) {
+                Icon(
+                    imageVector = if (isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                    contentDescription = stringResource(
+                        if (isFavorite) R.string.detail_favorite_remove else R.string.detail_favorite_add,
+                    ),
+                    tint = if (isFavorite) Color(0xFFFFC107) else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
