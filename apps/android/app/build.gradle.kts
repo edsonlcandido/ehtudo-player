@@ -42,6 +42,15 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file(System.getenv("EHTUDO_KEYSTORE") ?: "release.jks")
+            storePassword = System.getenv("EHTUDO_KEYSTORE_PASSWORD") ?: "ehtudo123"
+            keyAlias = System.getenv("EHTUDO_KEY_ALIAS") ?: "ehtudoiptv"
+            keyPassword = System.getenv("EHTUDO_KEY_PASSWORD") ?: "ehtudo123"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -49,6 +58,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {

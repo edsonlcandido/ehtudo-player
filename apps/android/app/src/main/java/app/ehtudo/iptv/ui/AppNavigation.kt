@@ -46,6 +46,7 @@ import app.ehtudo.iptv.ui.dashboard.category.MovieCategoryDetailScreen
 import app.ehtudo.iptv.ui.dashboard.category.SeriesCategoryDetailScreen
 import app.ehtudo.iptv.ui.dashboard.detail.MovieDetailScreen
 import app.ehtudo.iptv.ui.dashboard.detail.SeriesDetailScreen
+import app.ehtudo.iptv.ui.favorites.FavoritesScreen
 import app.ehtudo.iptv.ui.player.PlayerScreen
 import app.ehtudo.iptv.ui.player.PlayerViewModel
 import kotlinx.coroutines.TimeoutCancellationException
@@ -59,8 +60,8 @@ import kotlinx.coroutines.withTimeout
  * [SPLASH] route shows the launcher icon while the bootstrap loads and
  * then forwards to the [DASHBOARD] with the right initial tab baked in:
  *
- * - credentials present → Live TV (page 2 in the bottom bar)
- * - credentials blank  → Settings  (page 5)
+ * - credentials present → Live TV (page 0 in the bottom bar)
+ * - credentials blank  → Settings  (page 3)
  *
  * Pre-selecting the initial page avoids the "render Settings, then jump
  * to Live TV on first composition" flicker that the previous
@@ -75,6 +76,7 @@ private object Routes {
     const val LIVE_CATEGORY = "live_category"
     const val VOD_CATEGORY = "vod_category"
     const val SERIES_CATEGORY = "series_category"
+    const val FAVORITES = "favorites"
     const val PLAYER_MOVIE = "player/movie"
     const val PLAYER_SERIES = "player/series"
     const val PLAYER_LIVE = "player/live"
@@ -98,6 +100,8 @@ private object Routes {
     fun seriesCategory(playlistId: String, categoryId: String) =
         "$SERIES_CATEGORY/$playlistId/${Uri.encode(categoryId)}"
 
+    fun favorites(playlistId: String, type: String) = "$FAVORITES/$playlistId/$type"
+
     fun playerMovie(playlistId: String, streamId: Int) =
         "$PLAYER_MOVIE/$playlistId/$streamId"
 
@@ -120,6 +124,7 @@ private const val ARG_CHANNEL_ID = "channelId"
 private const val ARG_STREAM_ID = "streamId"
 private const val ARG_SERIES_ID = "seriesId"
 private const val ARG_CATEGORY_ID = "categoryId"
+private const val ARG_FAV_TYPE = "type"
 private const val ARG_EPISODE_ID = "episodeId"
 
 private const val ARG_PLAYLIST_ID = "playlistId"
@@ -127,8 +132,8 @@ private const val ARG_START_TAB = "startTab"
 
 /** Tab indices into the dashboard's bottom nav — must agree with
  *  `TAB_TITLE_IDS` in `PlaylistDashboardScreen.kt`. */
-private const val TAB_INDEX_LIVE = 2
-private const val TAB_INDEX_SETTINGS = 5
+private const val TAB_INDEX_LIVE = 0
+private const val TAB_INDEX_SETTINGS = 3
 
 @Composable
 fun AppNavigation() {
@@ -204,7 +209,7 @@ fun AppNavigation() {
                 ?: return@composable
             val startTabRaw = backStackEntry.arguments?.getInt(ARG_START_TAB)
                 ?: TAB_INDEX_SETTINGS
-            val startTab = startTabRaw.coerceIn(0, 5)
+            val startTab = startTabRaw.coerceIn(0, 3)
 
             var resolvedKind by androidx.compose.runtime.remember(id) {
                 androidx.compose.runtime.mutableStateOf<PlaylistKind?>(null)
@@ -246,6 +251,9 @@ fun AppNavigation() {
                         },
                         onOpenSeriesCategory = { catId ->
                             navController.navigate(Routes.seriesCategory(id, catId))
+                        },
+                        onOpenFavorites = { type ->
+                            navController.navigate(Routes.favorites(id, type))
                         },
                         onPlayLive = { streamId ->
                             navController.navigate(Routes.playerLive(id, streamId))
@@ -479,6 +487,32 @@ fun AppNavigation() {
                 onOpenMovie = { sid -> navController.navigate(Routes.movie(id, sid)) },
                 onOpenSeries = { sid -> navController.navigate(Routes.series(id, sid)) },
                 onPlayM3uChannel = { cid -> navController.navigate(Routes.playerM3u(id, cid)) },
+            )
+        }
+
+        composable(
+            route = "${Routes.FAVORITES}/{$ARG_PLAYLIST_ID}/{$ARG_FAV_TYPE}",
+            arguments = listOf(
+                navArgument(ARG_PLAYLIST_ID) { type = NavType.StringType },
+                navArgument(ARG_FAV_TYPE) { type = NavType.StringType },
+            ),
+        ) { backStackEntry ->
+            val playlistId = backStackEntry.arguments?.getString(ARG_PLAYLIST_ID)
+                ?: return@composable
+            val type = backStackEntry.arguments?.getString(ARG_FAV_TYPE) ?: "vod"
+            FavoritesScreen(
+                playlistId = playlistId,
+                initialType = type,
+                onBack = { navController.popBackStack() },
+                onOpenMovie = { streamId ->
+                    navController.navigate(Routes.movie(playlistId, streamId))
+                },
+                onOpenSeries = { seriesId ->
+                    navController.navigate(Routes.series(playlistId, seriesId))
+                },
+                onPlayLive = { streamId ->
+                    navController.navigate(Routes.playerLive(playlistId, streamId))
+                },
             )
         }
 

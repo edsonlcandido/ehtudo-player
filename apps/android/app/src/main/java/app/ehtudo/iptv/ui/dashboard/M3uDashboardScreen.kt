@@ -59,7 +59,7 @@ import kotlinx.coroutines.launch
  * SHA-256 id.
  *
  * Per-screen search was removed — channel discovery happens in the global
- * Search tab (first item on the bottom nav).
+ * SearchScreen reached from the dashboard's top-bar search action.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

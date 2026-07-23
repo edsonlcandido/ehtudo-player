@@ -32,7 +32,7 @@ import app.ehtudo.iptv.ui.LocalPlaylistContentStore
  * iOS counterpart: `LiveCategoryDetailView` in `LiveChannels`.
  *
  * Per-screen search was removed — global search lives in the dashboard's
- * bottom nav (first tab) and uses the same `CatalogTextSearch` matcher.
+ * top-bar search icon and uses the same `CatalogTextSearch` matcher.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

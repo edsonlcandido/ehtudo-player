@@ -28,8 +28,8 @@ import app.ehtudo.iptv.ui.dashboard.PosterCard
  * Series category detail — adaptive grid of 2:3 poster cards. Tapping a
  * poster opens [SeriesDetailScreen] via [onOpenSeries].
  *
- * Per-screen search was removed — use the global Search tab in the bottom
- * nav (first item) instead.
+ * Per-screen search was removed — global search lives in the dashboard's
+ * top-bar search icon and uses the same `CatalogTextSearch` matcher.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

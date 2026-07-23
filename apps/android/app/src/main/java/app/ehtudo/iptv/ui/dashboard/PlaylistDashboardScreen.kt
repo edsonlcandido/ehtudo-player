@@ -46,6 +46,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -78,13 +79,14 @@ import kotlinx.coroutines.launch
 @Composable
 fun PlaylistDashboardScreen(
     playlistId: String,
-    startTab: Int = SETTINGS_TAB_INDEX,
+    startTab: Int = LIVE_TAB_INDEX,
     onBack: () -> Unit,
     onOpenMovie: (Int) -> Unit,
     onOpenSeries: (Int) -> Unit,
     onOpenLiveCategory: (String) -> Unit,
     onOpenVodCategory: (String) -> Unit,
     onOpenSeriesCategory: (String) -> Unit,
+    onOpenFavorites: (String) -> Unit,
     onPlayLive: (streamId: Int) -> Unit,
     appVersion: String,
     // Optional callbacks that surface Downloads / Watch History from the
@@ -127,8 +129,9 @@ fun PlaylistDashboardScreen(
     val vodByCategory by store.vodStreamsByCategoryId.collectAsStateWithLifecycle()
     val seriesByCategory by store.seriesItemsByCategoryId.collectAsStateWithLifecycle()
 
-    // Order matches [DashboardBottomBar]: 0=Search, 1=Favorites, 2=Live,
-    // 3=Movies, 4=Series, 5=Settings.
+    // Order matches [DashboardBottomBar]: 0=Live, 1=Movies, 2=Series,
+    // 3=Settings. Search and Favorites live in the top bar (full-screen
+    // routes) and are not part of the pager.
     //
     // `startTab` (passed by [app.ehtudo.iptv.ui.AppNavigation] from the
     // splash route) seeds the initial page so the first frame already
@@ -175,11 +178,26 @@ fun PlaylistDashboardScreen(
                     )
                 },
                 actions = {
-                    // Content-tab actions: jump to a category. The Settings
-                    // tab has its own "İçeriği yeniden indir" row, and the
-                    // Search / Favorites tabs don't need category pickers,
-                    // so the action is hidden on every non-content tab.
-                    if (pagerState.currentPage in 2..4) {
+                    // Action row on the right side of the top bar. Order
+                    // is fixed: search, favorites, then a categories
+                    // picker that's only meaningful on the content tabs
+                    // (Live / Movies / Series). Settings hides the picker
+                    // but keeps search + favorites so the user can always
+                    // jump to either.
+                    IconButton(onClick = onOpenSearch) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = stringResource(R.string.dashboard_search_cd),
+                        )
+                    }
+                    IconButton(onClick = { onOpenFavorites(tabTypeFor(pagerState.currentPage)) }) {
+                        Icon(
+                            imageVector = Icons.Default.Star,
+                            contentDescription = stringResource(R.string.dashboard_favorites_cd),
+                            tint = Color(0xFFFFC107),
+                        )
+                    }
+                    if (pagerState.currentPage in 0..2) {
                         val typeForCurrentTab = tabTypeFor(pagerState.currentPage)
                         IconButton(onClick = { pickerType = typeForCurrentTab }) {
                             Icon(
@@ -347,21 +365,7 @@ private fun DashboardPager(
         userScrollEnabled = false,
     ) { page ->
         when (page) {
-            0 -> app.ehtudo.iptv.ui.search.SearchBody(
-                playlistId = playlistId,
-                onOpenMovie = onOpenMovie,
-                onOpenSeries = onOpenSeries,
-                onPlayLive = onPlayLive,
-                modifier = Modifier.fillMaxSize(),
-            )
-            1 -> app.ehtudo.iptv.ui.favorites.FavoritesBody(
-                playlistId = playlistId,
-                onOpenMovie = onOpenMovie,
-                onOpenSeries = onOpenSeries,
-                onPlayLive = onPlayLive,
-                modifier = Modifier.fillMaxSize(),
-            )
-            2 -> LiveTabBody(
+            0 -> LiveTabBody(
                 playlistId = playlistId,
                 categories = liveCats,
                 byCategoryId = liveByCategory,
@@ -372,7 +376,7 @@ private fun DashboardPager(
                 onResumeMovie = onOpenMovie,
                 onResumeEpisode = onResumeEpisode,
             )
-            3 -> MoviesTabBody(
+            1 -> MoviesTabBody(
                 playlistId = playlistId,
                 categories = vodCats,
                 byCategoryId = vodByCategory,
@@ -384,7 +388,7 @@ private fun DashboardPager(
                 onResumeEpisode = onResumeEpisode,
                 onPlayLive = onPlayLive,
             )
-            4 -> SeriesTabBody(
+            2 -> SeriesTabBody(
                 playlistId = playlistId,
                 categories = seriesCats,
                 byCategoryId = seriesByCategory,
@@ -396,7 +400,7 @@ private fun DashboardPager(
                 onResumeEpisode = onResumeEpisode,
                 onPlayLive = onPlayLive,
             )
-            5 -> app.ehtudo.iptv.ui.settings.PlaylistSettingsBody(
+            3 -> app.ehtudo.iptv.ui.settings.PlaylistSettingsBody(
                 playlistId = playlistId,
                 appVersion = appVersion,
                 onOpenHistory = onOpenHistory,
@@ -406,15 +410,12 @@ private fun DashboardPager(
     }
 }
 
-private const val TAB_COUNT = 6
-private const val SETTINGS_TAB_INDEX = 5
-private const val LIVE_TAB_INDEX = 2
+private const val TAB_COUNT = 4
+private const val SETTINGS_TAB_INDEX = 3
+private const val LIVE_TAB_INDEX = 0
 // Tab titles resolved via stringResource at compose time — see TAB_TITLE_IDS.
-// Order matches [DashboardBottomBar] below: Search is the first tab so users
-// land on it when they want to find a channel/movie/series quickly.
+// Order matches [DashboardBottomBar] below.
 private val TAB_TITLE_IDS = intArrayOf(
-    app.ehtudo.iptv.R.string.screen_search,
-    app.ehtudo.iptv.R.string.screen_favorites,
     app.ehtudo.iptv.R.string.screen_live_tv,
     app.ehtudo.iptv.R.string.screen_movies,
     app.ehtudo.iptv.R.string.screen_series,
@@ -423,10 +424,10 @@ private val TAB_TITLE_IDS = intArrayOf(
 
 /** Index → iOS-compatible type discriminator. */
 private fun tabTypeFor(page: Int): String = when (page) {
-    2 -> "live"
-    3 -> "vod"
-    4 -> "series"
-    else -> "live" // search/favorites/settings — never reached
+    0 -> "live"
+    1 -> "vod"
+    2 -> "series"
+    else -> "live" // settings — never reached, picker hidden there
 }
 
 /** Per-type display string for the picker sheet header. */
@@ -444,39 +445,27 @@ private fun DashboardBottomBar(currentPage: Int, onSelect: (Int) -> Unit) {
     NavigationBar {
         DashboardTab(
             selected = currentPage == 0,
-            icon = Icons.Default.Search,
-            label = stringResource(app.ehtudo.iptv.R.string.screen_search),
+            icon = Icons.Default.LiveTv,
+            label = stringResource(app.ehtudo.iptv.R.string.screen_live_tv),
             onClick = { onSelect(0) },
         )
         DashboardTab(
             selected = currentPage == 1,
-            icon = Icons.Default.Star,
-            label = stringResource(app.ehtudo.iptv.R.string.screen_favorites),
+            icon = Icons.Default.Movie,
+            label = stringResource(app.ehtudo.iptv.R.string.screen_movies),
             onClick = { onSelect(1) },
         )
         DashboardTab(
             selected = currentPage == 2,
-            icon = Icons.Default.LiveTv,
-            label = stringResource(app.ehtudo.iptv.R.string.screen_live_tv),
+            icon = Icons.Default.Tv,
+            label = stringResource(app.ehtudo.iptv.R.string.screen_series),
             onClick = { onSelect(2) },
         )
         DashboardTab(
             selected = currentPage == 3,
-            icon = Icons.Default.Movie,
-            label = stringResource(app.ehtudo.iptv.R.string.screen_movies),
-            onClick = { onSelect(3) },
-        )
-        DashboardTab(
-            selected = currentPage == 4,
-            icon = Icons.Default.Tv,
-            label = stringResource(app.ehtudo.iptv.R.string.screen_series),
-            onClick = { onSelect(4) },
-        )
-        DashboardTab(
-            selected = currentPage == 5,
             icon = Icons.Default.Settings,
             label = stringResource(app.ehtudo.iptv.R.string.screen_settings),
-            onClick = { onSelect(5) },
+            onClick = { onSelect(3) },
         )
     }
 }
