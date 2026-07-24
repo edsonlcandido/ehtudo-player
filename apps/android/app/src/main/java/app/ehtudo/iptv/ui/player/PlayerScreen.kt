@@ -148,6 +148,19 @@ fun PlayerScreen(
         onDispose { focus.release() }
     }
 
+    // Keep the screen on while the player is on screen. The system dim
+    // timeout would otherwise blank the display mid-playback on phones
+    // (the user complaint was the screen dimming during playback); on TV
+    // the user is already on AC power so this is a no-op visually but
+    // still keeps the activity's wake lock semantics consistent.
+    val window = (context as? android.app.Activity)?.window
+    DisposableEffect(player) {
+        window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose {
+            window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
     // Auto-PiP: react to MainActivity.onUserLeaveHint (the Activity bumps the
     // pipTrigger counter). Gated on the `player.pipEnabled` preference so the
     // user can opt out; `drop(1)` skips the initial value at composition time.

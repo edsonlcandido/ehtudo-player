@@ -1,12 +1,15 @@
 package app.ehtudo.iptv.ui.dashboard
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,6 +29,7 @@ import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -48,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -75,7 +80,7 @@ import kotlinx.coroutines.launch
  * Bottom NavigationBar swaps the [HorizontalPager] page so swiping
  * sideways and tapping the bar agree on the active tab.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun PlaylistDashboardScreen(
     playlistId: String,
@@ -165,6 +170,19 @@ fun PlaylistDashboardScreen(
     val pickerSheetState = rememberModalBottomSheetState()
     var pickerType by remember { mutableStateOf<String?>(null) }
 
+    val imeVisible = WindowInsets.isImeVisible
+
+    // Critical TV/IME interaction: when the soft keyboard is up, the user
+    // presses BACK to dismiss it. The `HorizontalPager` would otherwise
+    // intercept that BACK and animate one page to the left (Séries), which
+    // the user perceives as "every press jumps me to Séries". Installing
+    // a `BackHandler` here consumes BACK while the IME is visible and
+    // closes the keyboard instead.
+    val keyboardController = LocalSoftwareKeyboardController.current
+    BackHandler(enabled = imeVisible) {
+        keyboardController?.hide()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -210,12 +228,14 @@ fun PlaylistDashboardScreen(
             )
         },
         bottomBar = {
-            DashboardBottomBar(
-                currentPage = pagerState.currentPage,
-                onSelect = { index ->
-                    scope.launch { pagerState.animateScrollToPage(index) }
-                },
-            )
+            if (!imeVisible) {
+                DashboardBottomBar(
+                    currentPage = pagerState.currentPage,
+                    onSelect = { index ->
+                        scope.launch { pagerState.animateScrollToPage(index) }
+                    },
+                )
+            }
         },
     ) { innerPadding ->
         when {
